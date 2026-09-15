@@ -103,6 +103,7 @@ table.grid th{font-size:11px;letter-spacing:.05em;color:var(--dim);font-weight:5
   padding:7px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
 table.grid th.s{cursor:pointer}
 table.grid th.s:hover{color:var(--txt)}
+#tab-hu.hu-dragging{outline:2px dashed var(--accent);outline-offset:8px;border-radius:6px}
 table.grid td{padding:7px 12px;border-bottom:1px solid var(--line2);font-size:12.5px;vertical-align:middle}
 table.grid tr:hover td{background:rgba(255,255,255,.03)}
 tr.grp td{background:var(--bg3);color:var(--dim);font-size:11.5px;letter-spacing:.04em;padding:5px 12px}
@@ -379,6 +380,7 @@ table.pool tr:not(.miss):hover td{background:rgba(255,255,255,.05)}
     <button class="ghost mini" id="btn-hu-dir" style="display:none">更换目录</button>
     <span class="hint" id="hu-dir-hint">…</span>
   </div>
+  <div class="hint" id="hu-drop-hint" style="margin-top:6px">也可以把 python-backend.zip（或 backend 文件夹）直接拖到本页任意位置上传——不弹任何选择框。</div>
   <div class="errbox" id="hu-err"></div>
   <div class="okbox" id="hu-ok"></div>
 
@@ -1289,6 +1291,9 @@ document.getElementById("btn-hu-latest").onclick = async function () {
   if (!window.showDirectoryPicker) {
     err.textContent = "当前浏览器不支持一键上传（需 Chrome/Edge 桌面版），请用「上传所选文件」"; err.style.display = "block"; return;
   }
+  if (!huLsGet(HU_DIR_NAME_KEY)) {
+    document.getElementById("hu-dir-hint").textContent = "正在打开目录选择框……选好后这里会变成「已记住的目录」";
+  }
   let pick;
   try { pick = await huLatestFile(); }
   catch (e) { huDirErr(e); return; }
@@ -1301,6 +1306,49 @@ document.getElementById("btn-hu-latest").onclick = async function () {
     huDirHint(pick.dh, true);
   }
 };
+
+/* ---- 拖拽上传：把 zip（或它所在的文件夹）拖到「热更新」页任意位置，零对话框、零权限 ---- */
+async function huZipFromDrop(dt) {
+  for (const it of Array.from(dt.items || [])) {
+    if (it.kind !== "file" || typeof it.getAsFileSystemHandle !== "function") continue;
+    let handle = null;
+    try { handle = await it.getAsFileSystemHandle(); } catch (e) { continue; }
+    if (!handle || handle.kind !== "directory") continue;
+    let best = null;
+    for await (const ent of handle.values()) {
+      if (ent.kind === "file" && ent.name.toLowerCase().endsWith(".zip")) {
+        const f = await ent.getFile();
+        if (!best || f.lastModified > best.f.lastModified) best = {name: ent.name, f, dh: null};
+      }
+    }
+    return best || {error: "拖进来的文件夹里没有 zip——请拖 backend 目录（含 python-backend.zip）。"};
+  }
+  const files = Array.from(dt.files || []).filter((f) => f.name.toLowerCase().endsWith(".zip"));
+  if (!files.length) return {error: "没看到 zip：把 python-backend.zip 拖进来，或直接拖它所在的 backend 文件夹。"};
+  files.sort((a, b) => b.lastModified - a.lastModified);
+  return {name: files[0].name, f: files[0], dh: null};
+}
+(() => {
+  const panel = document.getElementById("tab-hu");
+  panel.addEventListener("dragover", (e) => { e.preventDefault(); panel.classList.add("hu-dragging"); });
+  panel.addEventListener("dragleave", (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove("hu-dragging"); });
+  panel.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    panel.classList.remove("hu-dragging");
+    const err = document.getElementById("hu-err");
+    err.style.display = "none";
+    let pick;
+    try { pick = await huZipFromDrop(e.dataTransfer); }
+    catch (ex) { pick = {error: "读取拖入的文件失败：" + (ex.message || ex)}; }
+    if (pick.error) { err.textContent = pick.error; err.style.display = "block"; return; }
+    document.getElementById("hu-fileinfo").textContent =
+      `${pick.name} · ${huMb(pick.f.size)} · ${new Date(pick.f.lastModified).toLocaleString()}`;
+    await huDoUpload(pick.f, document.getElementById("btn-hu-latest"));
+    if (document.getElementById("hu-ok").style.display === "block") {
+      huLsSet(HU_LAST_UP_KEY, `${pick.name} · ${huMb(pick.f.size)} · ${new Date().toLocaleString()}`);
+    }
+  });
+})();
 (async () => { huDirHint(await huDirLoad()); })();
 document.getElementById("hu-status").onchange = e => {
   document.getElementById("hu-publish-at-row").style.display = e.target.value === "scheduled" ? "" : "none";
