@@ -100,8 +100,9 @@ node scripts/ops/license-gen.mjs --plan monthly --count 10 --note "第二批"
 
 ### v7（2026-09-15）：影视源按测速延时排序
 
-- 后台「影视源」页新增「延时」列、「全部测速」「按延时排序 / 按配置顺序」按钮，每个源也可单独测速；
+- 后台「影视源」页新增「延时」列与「全部测速」按钮，每个源也可单独测速；原先的「按延时排序 /
+  按配置顺序」手动切换按钮已移除（排序改为测速后自动生效，避免停留在一个看不出来的模式里）；
 - 新接口 `POST /api/vod_source_speed`：macms 源打一次 `?ac=list`、hhkan 源打一次站内搜索页，只测一次请求，
   返回 `{ok, latency_ms, status, bytes}`；`vod_source_test`（指定影片测试）同时回报 `latency_ms` 并计入延时列；
-- 排序规则：测速成功按毫秒升序 → 测速失败 → 未测速，同档保持配置顺序；测速结果与排序模式存浏览器
-  localStorage（`otv_vod_latency_v1` / `otv_vod_sort_v1`），刷新后保留。
+- 排序规则：点「全部测速」测完即自动按延时从快到慢排列（测速成功按毫秒升序 → 测速失败 → 未测速，
+  同档保持配置顺序），刷新页面回到配置顺序；测速结果存浏览器 localStorage（`otv_vod_latency_v1`），刷新后保留。

@@ -1927,7 +1927,7 @@ async function vodSourceTest(env, payload) {
 }
 
 /**
- * 单源测速：只打一次该源最轻的请求，返回毫秒延时，供后台「按延时排序」用。
+ * 单源测速：只打一次该源最轻的请求，返回毫秒延时，供后台「全部测速」后按延时排序用。
  * macms 取 `?ac=list`（接口探活）；hhkan 取站内搜索页（无 API，只能测页面）。
  */
 async function vodSourceSpeed(env, payload) {

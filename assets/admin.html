@@ -556,7 +556,7 @@ table.pool tr:not(.miss):hover td{background:rgba(255,255,255,.05)}
     </div>
   </div>
   <div class="panel">
-<div class="secthead"><h2>源列表</h2><span class="sub" id="vod-source-list-sub">当前项目源按配置顺序显示</span><span class="spring"></span><button class="ghost mini" id="btn-vod-speed" onclick="vodSourceSpeedAll()">全部测速</button><button class="ghost mini" id="btn-vod-sort" onclick="vodSourceToggleSort()">按延时排序</button><button class="ghost mini" onclick="loadVodSources()">刷新</button></div>
+<div class="secthead"><h2>源列表</h2><span class="sub" id="vod-source-list-sub">当前项目源按配置顺序显示</span><span class="spring"></span><button class="ghost mini" id="btn-vod-speed" onclick="vodSourceSpeedAll()">全部测速</button><button class="ghost mini" onclick="loadVodSources()">刷新</button></div>
     <div class="gridwrap" id="vod-source-table"></div>
   </div>
 </section>
@@ -1779,10 +1779,9 @@ async function iptvAutoRun() {
 /* ---- 影视源草稿、发布与指定影片测试 ---- */
 let vodSourceRows = [], vodSourceEditId = null, vodSourceTestRow = null, vodSourceHls = null;
 let vodLatency = {}, vodSortLatency = false;
-const VOD_LAT_KEY = "otv_vod_latency_v1", VOD_SORT_KEY = "otv_vod_sort_v1";
+const VOD_LAT_KEY = "otv_vod_latency_v1";
 function vodLatLoad() {
   try { vodLatency = JSON.parse(localStorage.getItem(VOD_LAT_KEY) || "{}") || {}; } catch (e) { vodLatency = {}; }
-  vodSortLatency = localStorage.getItem(VOD_SORT_KEY) === "latency";
 }
 function vodLatKey(s) { return String((s && (s.id || s.name)) || ""); }
 function vodLatSet(s, ok, ms) {
@@ -1799,8 +1798,6 @@ function vodLatCell(s) {
 function vodSyncSortUi() {
   const sub = document.getElementById("vod-source-list-sub");
   if (sub) sub.textContent = vodSortLatency ? "按测速延时从快到慢显示" : "当前项目源按配置顺序显示";
-  const btn = document.getElementById("btn-vod-sort");
-  if (btn) btn.textContent = vodSortLatency ? "按配置顺序" : "按延时排序";
 }
 function vodRows(payload) {
   if (Array.isArray(payload)) return payload;
@@ -1853,11 +1850,6 @@ function vodRenderRows() {
     </tr>`;
     }).join("") + "</table>";
 }
-function vodSourceToggleSort() {
-  vodSortLatency = !vodSortLatency;
-  try { localStorage.setItem(VOD_SORT_KEY, vodSortLatency ? "latency" : "config"); } catch (e) {}
-  vodRenderRows();
-}
 async function vodSourceSpeedOne(index, quiet) {
   const s = vodSourceRows[index];
   if (!s) return null;
@@ -1886,7 +1878,6 @@ async function vodSourceSpeedAll() {
   await Promise.all([run(), run(), run()]);
   btn.disabled = false; btn.textContent = "全部测速";
   vodSortLatency = true;
-  try { localStorage.setItem(VOD_SORT_KEY, "latency"); } catch (e) {}
   vodRenderRows();
   toast(`已测速 ${total} 个源，按延时从快到慢排序`);
 }
@@ -1969,7 +1960,7 @@ async function vodSourceTestRun() {
   const klass = d.grade === "优秀" || d.grade === "良好" ? "ok" : d.grade === "一般" ? "warn" : "bad";
   result.innerHTML = `<b class="st ${klass}" style="font-size:18px">${esc(d.grade)}</b> · 综合 ${d.score ?? 0} 分<br><span class="dim">${esc(d.summary || "")}</span>` + (d.preview_url ? '<br><button class="act" style="margin-top:10px" id="btn-vod-preview">试看</button>' : "");
   if (d.preview_url) document.getElementById("btn-vod-preview").onclick = () => vodSourcePreview(d.preview_url);
-  /* 指定影片测试的耗时同样计入延时列，便于「按延时排序」 */
+  /* 指定影片测试的耗时同样计入延时列，便于「全部测速」后排序 */
   if (vodSourceTestRow && d.grade && d.grade !== "不可用") { vodLatSet(vodSourceTestRow, true, d.latency_ms); vodRenderRows(); }
 }
 
