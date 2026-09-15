@@ -1430,8 +1430,19 @@ async function activateCode(env, payload, ip) {
 
 // ---------------- 电视源重建（自动模式 / 外部定时器） ----------------
 
-async function rebuildIptv(env, { mode = "auto", budgetMs = 50_000, maxProbes = 120 } = {}) {
-  const deadline = Date.now() + budgetMs;
+/**
+ * 上游聚合源 → 测活剔死 → 写 latest。
+ * 托管模式（mode=manual）下自动任务必须跳过：手动发布的列表不能被每日推流覆盖
+ * （与旧 iptv-rebuild 云函数读 version.json 的语义一致）；后台「自动重建」按钮走 force=true。
+ */
+async function rebuildIptv(env, { mode = "auto", budgetMs = 0, maxProbes = 0, force = false } = {}) {
+  const budget = budgetMs || toInt(env.OTV_IPTV_BUDGET_MS, 45_000) || 45_000;
+  const probeLimit = maxProbes || toInt(env.OTV_IPTV_PROBES, 60) || 60;
+  const currentMode = (await rpcIptvGetMode(env)).mode || "auto";
+  if (!force && currentMode === "manual") {
+    return { ret: 0, skipped: true, reason: "manual_mode", mode: currentMode };
+  }
+  const deadline = Date.now() + budget;
   let channels = [];
   let sourceUsed = "";
   for (const upstream of IPTV_UPSTREAMS) {
@@ -1452,9 +1463,9 @@ async function rebuildIptv(env, { mode = "auto", budgetMs = 50_000, maxProbes = 
 
   // 广度优先取每条频道的前若干线路，控制子请求总数
   const candidates = [];
-  for (let round = 0; round < 8 && candidates.length < maxProbes; round += 1) {
+  for (let round = 0; round < 8 && candidates.length < probeLimit; round += 1) {
     for (const channel of channels) {
-      if (channel.lines.length > round && candidates.length < maxProbes) candidates.push(channel.lines[round]);
+      if (channel.lines.length > round && candidates.length < probeLimit) candidates.push(channel.lines[round]);
     }
   }
   const unique = [...new Set(candidates)];
@@ -1502,7 +1513,7 @@ async function rebuildIptv(env, { mode = "auto", budgetMs = 50_000, maxProbes = 
   });
   return {
     ret: 0, version, channels: usable.length, lines: lineCount,
-    probed: scores.size, alive, upstream: sourceUsed, elapsedMs: budgetMs - Math.max(deadline - Date.now(), 0),
+    probed: scores.size, alive, upstream: sourceUsed, elapsedMs: budget - Math.max(deadline - Date.now(), 0),
   };
 }
 
@@ -2428,7 +2439,7 @@ async function handleAdminApi(request, env, url) {
       return jsonResponse(await hIptvSync(env, body.mode === "replace" ? "replace" : "merge"));
     case "iptv_auto_run": {
       const starts = Date.now();
-      const out = await rebuildIptv(env, { mode: "auto" });
+      const out = await rebuildIptv(env, { mode: "auto", force: true });
       if (out.error) return jsonResponse(out);
       return jsonResponse({ ...out, elapsedMs: Date.now() - starts });
     }

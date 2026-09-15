@@ -45,5 +45,18 @@ npm run build && npm run validate
 ## 与旧系统的差异（已知）
 
 - 热更包分片重组上限 96MB（Worker 内存限制）；更大的包请在本机签发后用直传，或拆包。
-- 电视源「自动重建」受 Worker 子请求数限制，单次最多测 120 条线路（原实现 ~520 条）。
+- 电视源「自动重建」受 Worker 子请求数限制，单次默认测 60 条线路（`OTV_IPTV_PROBES` 可调，原实现 ~520 条）。
 - 每日自动推流没有内置定时器：用外部定时器（如 GitHub Actions）每天 `POST /iptv/refresh?token=…`。
+
+## 切域名清单（脱离 CloudBase）
+
+1. **站点访问**：现在站点是私有的（仅 ChatGPT 登录可见）。设备（APK）无法带 ChatGPT 身份，所以切域名前要把站点改成公开——后台接口本身仍有账号密码门禁（失败 5 次/分钟锁定），与腾讯云现网同一套保护。
+2. **出 v1.26 APK**：`android/app/build.gradle` 与 `internal/mobile/app/build.gradle` 的
+   `LICENSE_ENDPOINT` → `https://<站点域名>/activate`，
+   `HOTUPDATE_ENDPOINT` → `https://<站点域名>/hotupdate`；
+   `IptvRepository.SOURCES[0]` → `https://<站点域名>/iptv/latest`（两个工程各一份）。
+3. **数据同步**：切之前再跑一次增量同步（旧站仍在被使用，卡密/激活记录会变）：
+   `node scripts/migrate/export-cloudbase.mjs` → `node scripts/migrate/import-to-site.mjs <快照目录> <站点域名>`。
+4. **每日推流**：接一个定时器调用 `scripts/ops/iptv-refresh.mjs`（或直接 POST `/iptv/refresh?token=…`），替代 CloudBase 每天 06:30 的 `iptv-rebuild`。
+5. **网页版**：`otv-web`（`proxy.py` + `www/`，234KB Python）仍在 CloudBase；迁移或把 `OTV_LICENSE_ENDPOINT`、`IPTV_SOURCES[0]` 指向新站点即可先解耦。
+6. **收尾**：设备端观察一个版本周期后，CloudBase 的 activate / hotupdate / iptv-rebuild / otv-admin 可下线，PG 与桶做一次终态归档。
