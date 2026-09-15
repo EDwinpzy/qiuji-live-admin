@@ -1910,7 +1910,7 @@ async function vodSourceTest(env, payload) {
     return {
       grade: "不可用", score: 0,
       summary: String(error.message || error).slice(0, 160),
-      matched: false, preview_url: "",
+      matched: false, preview_url: "", latency_ms: Date.now() - started,
     };
   }
   const elapsed = Date.now() - started;
@@ -1922,7 +1922,44 @@ async function vodSourceTest(env, payload) {
     summary: `${preview ? "可试看" : "未取得可播放地址"}，匹配度 ${match}，响应 ${elapsed}ms${detail ? ` · ${detail}` : ""}`,
     matched: match >= 60,
     preview_url: preview,
+    latency_ms: elapsed,
   };
+}
+
+/**
+ * 单源测速：只打一次该源最轻的请求，返回毫秒延时，供后台「按延时排序」用。
+ * macms 取 `?ac=list`（接口探活）；hhkan 取站内搜索页（无 API，只能测页面）。
+ */
+async function vodSourceSpeed(env, payload) {
+  const source = payload.source && typeof payload.source === "object" ? payload.source : payload;
+  const adapter = String(source.adapter_type || "");
+  let url = "";
+  if (adapter.startsWith("macms")) {
+    const base = String(source.api_url || "").replace(/\/$/, "");
+    url = base ? `${base}?ac=list` : "";
+  } else {
+    const site = String(source.site_url || "").replace(/\/$/, "");
+    url = site ? `${site}/search?k=${encodeURIComponent("测试")}&p=1` : "";
+  }
+  if (!url) return { ok: false, latency_ms: 0, error: "该源未配置可用地址" };
+  const started = Date.now();
+  try {
+    assertPublicHttps(url);
+    const response = await fetchWithTimeout(
+      url,
+      { headers: { "user-agent": "Mozilla/5.0 OptimalTV-admin" } },
+      8_000,
+    );
+    const text = await response.text();
+    return {
+      ok: response.ok && text.length > 0,
+      latency_ms: Date.now() - started,
+      status: response.status,
+      bytes: text.length,
+    };
+  } catch (error) {
+    return { ok: false, latency_ms: Date.now() - started, error: String(error.message || error).slice(0, 120) };
+  }
 }
 
 async function vodSourceDiscover(env, siteUrl) {
@@ -2595,6 +2632,8 @@ async function handleAdminApi(request, env, url) {
       }
     case "vod_source_test":
       return jsonResponse(await vodSourceTest(env, body));
+    case "vod_source_speed":
+      return jsonResponse(await vodSourceSpeed(env, body));
     case "vod_source_publish":
       return jsonResponse(await rpcVodSourcePublish(env));
     case "import_snapshot":

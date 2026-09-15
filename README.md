@@ -97,3 +97,11 @@ node scripts/ops/license-gen.mjs --plan monthly --count 10 --note "第二批"
 
 - 热更包校验必备条目补 `media_index.py`、`pinyin_map.json`——与 App `HotUpdateManager.REQUIRED_ENTRIES`、后台 `admin_server.HU_REQUIRED_ENTRIES` 完全一致；旧口径包现在会被拒（实测返回「zip 缺少必备条目: media_index.py, pinyin_map.json」），完整包正常入库。
 - `/objects/*` 补 `Content-Length`：全量下载、Range（`206` + `Content-Range`）、HEAD 三种形态都有正确长度，设备端下载进度不再缺字段。
+
+### v7（2026-09-15）：影视源按测速延时排序
+
+- 后台「影视源」页新增「延时」列、「全部测速」「按延时排序 / 按配置顺序」按钮，每个源也可单独测速；
+- 新接口 `POST /api/vod_source_speed`：macms 源打一次 `?ac=list`、hhkan 源打一次站内搜索页，只测一次请求，
+  返回 `{ok, latency_ms, status, bytes}`；`vod_source_test`（指定影片测试）同时回报 `latency_ms` 并计入延时列；
+- 排序规则：测速成功按毫秒升序 → 测速失败 → 未测速，同档保持配置顺序；测速结果与排序模式存浏览器
+  localStorage（`otv_vod_latency_v1` / `otv_vod_sort_v1`），刷新后保留。
