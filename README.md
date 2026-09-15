@@ -39,6 +39,19 @@ npm run build && npm run validate
 
 账号密码写在 `.dev-state/admin_pass.txt`；本地库 `.dev-state/d1.sqlite`，对象在 `.dev-state/r2/`。
 
+## 本机补货（写入站点 D1）
+
+CloudBase 时代的 `license_gen.py`（本地签发）+ `db_import.py`（写 PG）已由一条命令取代：
+
+```bash
+node scripts/ops/license-gen.mjs --plan monthly --count 10 --note "第二批"
+```
+
+- 站点取 `SITE_URL`（默认线上站点），密码取 `OTV_ADMIN_PASS` 或 `My TV/tools/keys/admin_pass.txt`；
+- 云端用 `OTV_PRIV_KEY` 签发（与 `license_gen.py` 同一套 ECDSA P-256 / DER 口径，设备端验签一致），直接写入 D1；
+- 同时落地 `out/license/<批次>/cards.csv` 供发卡平台导入；
+- 走后台账号密码登录，站点即使是私有状态也能用。
+
 ## 设备端对接（v1.26 需改）
 
 - `LICENSE_ENDPOINT` → `<站点域名>/activate`
