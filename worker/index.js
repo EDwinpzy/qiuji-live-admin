@@ -2616,8 +2616,6 @@ async function handleDevice(request, env, url) {
     return new Response(object.body, { status: options.range ? 206 : 200, headers });
   }
 
-  const deviceId = "";
-  void deviceId;
   if (request.method === "POST" && (path === "/check" || path === "/hotupdate/check" || path === "/hotupdate")) {
     const body = await readJsonBody(request);
     if (body === null) return jsonResponse({ ret: 400, msg: "bad_json" }, 200, CORS_HEADERS);
