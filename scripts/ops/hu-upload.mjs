@@ -42,7 +42,13 @@ const dryRun = flag("dry-run");
 const scheduled = arg("scheduled");
 const status = scheduled ? "scheduled" : flag("offline") ? "offline" : "published";
 const name = arg("name");
-const notes = arg("notes") || `本机上传 ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+// 备注用本机时间（toISOString 是 UTC，会在后台列表里差 8 小时）
+const localStamp = (() => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+})();
+const notes = arg("notes") || `本机上传 ${localStamp}`;
 const force = flag("force");
 
 const requested = arg("file");
