@@ -52,6 +52,21 @@ node scripts/ops/license-gen.mjs --plan monthly --count 10 --note "第二批"
 - 同时落地 `out/license/<批次>/cards.csv` 供发卡平台导入；
 - 走后台账号密码登录，站点即使是私有状态也能用。
 
+## 本机上传热更包（不用浏览器选目录）
+
+后台「热更新」页的「上传最新版本」靠浏览器的目录直读能力，在内嵌浏览器 / 后台窗口里选择框弹不出来。
+本机直接跑脚本即可，默认路径已经写死在脚本里（app 工程的 `python-backend.zip`）：
+
+```bash
+node scripts/ops/hu-upload.mjs            # 默认路径 + 立即发布
+node scripts/ops/hu-upload.mjs --offline  # 只上传（下线态），到后台点「上线」再推给设备
+node scripts/ops/hu-upload.mjs --dry-run  # 只登录看看要传什么，不传
+```
+
+- 走的是后台同一套接口（`/api/hu_upload_chunk` + `/api/hu_upload_commit`），4MB 分片、每片失败重传 3 次；
+- 其它参数：`--file <zip>`、`--name`、`--notes`、`--force`、`--scheduled <时间>`、`--site`；
+- 密码取 `OTV_ADMIN_PASS` 或 `My TV/tools/keys/admin_pass.txt`。
+
 ## 设备端对接（v1.26 需改）
 
 - `LICENSE_ENDPOINT` → `<站点域名>/activate`

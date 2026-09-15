@@ -1217,8 +1217,8 @@ function huDirErr(e) {
   const err = document.getElementById("hu-err");
   if (e && e.name === "AbortError") return; // 自己点了取消，不用报错
   err.textContent = (e && e.name === "PickerNotShownError")
-    ? "目录选择框没有弹出来——当前浏览器不能直读本地目录（Codex 内嵌浏览器、后台标签页常见）。请用 Chrome / Edge 桌面窗口打开本页，或改用「上传所选文件」。"
-    : "目录选择失败：" + ((e && e.message) || "未知原因") + "——可改用「上传所选文件」，或用 Chrome / Edge 桌面窗口重试。";
+    ? "目录选择框没有弹出来——当前浏览器不能直读本地目录（Codex 内嵌浏览器、后台标签页常见）。请用 Chrome / Edge 桌面窗口打开本页，或改用「上传所选文件」；也可以在本机跑 node scripts/ops/hu-upload.mjs（默认路径已写好，不用选目录）。"
+    : "目录选择失败：" + ((e && e.message) || "未知原因") + "——可改用「上传所选文件」，用 Chrome / Edge 桌面窗口重试，或在本机跑 node scripts/ops/hu-upload.mjs。";
   err.style.display = "block";
 }
 async function huLatestFile() {
