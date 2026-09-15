@@ -1,6 +1,7 @@
 // 端到端冒烟：真实调用本地预览的 Worker（后台接口 + 设备接口）。
 // 用法：npm run dev 后另开一个终端 npm run smoke
 import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -223,6 +224,30 @@ check("电视源回滚", rollback.data.ret === 0 && rollback.data.version === 9,
 const modeAuto = await call("/api/iptv_mode", { body: { mode: "auto" } });
 const modeBack = await call("/api/iptv_mode", { body: { mode: "manual" } });
 check("模式切换", modeAuto.data.mode === "auto" && modeBack.data.mode === "manual");
+
+// ---- 登录限速：失败计数必须落 D1（线上每个请求可能是全新 isolate，内存计数不算数）----
+const guardStatuses = [];
+for (let i = 0; i < 5; i += 1) {
+  const attempt = await call("/api/login", { body: { user: "admin", pass: `wrong-${i}` }, session: false });
+  guardStatuses.push(attempt.status);
+}
+const lockedRightPass = await call("/api/login", { body: { user: "admin", pass: adminPass }, session: false });
+check(
+  "连续失败 5 次后锁定（正确密码也 429）",
+  guardStatuses.every((status) => status === 401) && lockedRightPass.status === 429,
+  `前五次=${guardStatuses.join("/")} 第六次=${lockedRightPass.status}`,
+);
+
+const guardDb = new DatabaseSync(path.join(root, ".dev-state/d1.sqlite"));
+const guardRows = guardDb.prepare("SELECT scope, fails, locked_until FROM login_guard").all();
+guardDb.prepare("DELETE FROM login_guard").run();
+guardDb.close();
+const lockedRow = guardRows.find((row) => row.scope === "all");
+check(
+  "锁定记录落在 D1（跨 isolate / 重启仍生效）",
+  Boolean(lockedRow) && Number(lockedRow.locked_until) > Date.now(),
+  `scopes=${guardRows.map((row) => `${row.scope}#${row.fails}`).join(",")}`,
+);
 
 console.log(failures ? `\n${failures} 项失败` : "\n全部通过");
 process.exit(failures ? 1 : 0);

@@ -197,22 +197,97 @@ function sessionCookie(token, secure) {
   return cookie;
 }
 
-// 登录限速：IP → [失败次数, 锁定到期毫秒]，单实例内存（与本地形态同款语义）
+// 登录限速：内存快路径 + D1 持久计数。
+// Workers 每个请求可能是全新 isolate（实测线上纯内存计数永远不触发），
+// 所以判定以 D1 为准：单 IP 60s 内 5 次失败锁定，另有全局兜底上限。
 const loginGuard = new Map();
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_GLOBAL_LIMIT = 40;
 
-function loginTooBusy(peer) {
-  const state = loginGuard.get(peer);
-  return Boolean(state && state[1] > Date.now());
+function guardSpecs(peer) {
+  // 拿不到客户端 IP 时（平台没给 cf-connecting-ip / x-forwarded-for）退化成单一全局桶，
+  // 但仍按单 IP 的 5 次阈值收口，不能让失败的 IP 判定形同虚设。
+  if (!peer || peer === "unknown") return [{ scope: "all", limit: LOGIN_FAIL_LIMIT }];
+  return [
+    { scope: `ip:${peer}`, limit: LOGIN_FAIL_LIMIT },
+    { scope: "all", limit: LOGIN_GLOBAL_LIMIT },
+  ];
 }
 
-function noteLogin(peer, ok) {
+async function loginTooBusy(env, peer) {
+  const now = Date.now();
+  const cached = loginGuard.get(peer);
+  if (cached && cached[1] > now) return true;
+  const scopes = guardSpecs(peer).map((spec) => spec.scope);
+  try {
+    const marks = scopes.map(() => "?").join(", ");
+    const rows = await dbAll(
+      env,
+      `SELECT scope, locked_until FROM login_guard WHERE scope IN (${marks})`,
+      scopes,
+    );
+    for (const row of rows) {
+      if (Number(row.locked_until) > now) {
+        loginGuard.set(peer, [LOGIN_FAIL_LIMIT, Number(row.locked_until)]);
+        return true;
+      }
+    }
+  } catch {
+    /* D1 异常时不阻断登录，退回内存判定 */
+  }
+  return false;
+}
+
+async function bumpGuard(env, scope, limit, now) {
+  const row = await dbFirst(env, "SELECT fails, window_start FROM login_guard WHERE scope = ?", [scope]);
+  const sameWindow = Boolean(row) && Number(row.window_start) + LOGIN_WINDOW_MS > now;
+  const fails = sameWindow ? Number(row.fails) + 1 : 1;
+  const windowStart = sameWindow ? Number(row.window_start) : now;
+  const lockedUntil = fails >= limit ? now + LOGIN_WINDOW_MS : 0;
+  await dbRun(
+    env,
+    `INSERT INTO login_guard (scope, fails, window_start, locked_until, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(scope) DO UPDATE SET
+       fails = excluded.fails,
+       window_start = excluded.window_start,
+       locked_until = excluded.locked_until,
+       updated_at = excluded.updated_at`,
+    [scope, fails, windowStart, lockedUntil, nowIso()],
+  );
+}
+
+async function noteLogin(env, peer, ok) {
+  const now = Date.now();
+  const specs = guardSpecs(peer);
+  const scopes = specs.map((spec) => spec.scope);
+  const marks = scopes.map(() => "?").join(", ");
   if (ok) {
     loginGuard.delete(peer);
+    try {
+      await dbRun(env, `DELETE FROM login_guard WHERE scope IN (${marks})`, scopes);
+    } catch {
+      /* 清理失败不影响登录 */
+    }
     return;
   }
   const [fails] = loginGuard.get(peer) || [0, 0];
   const next = fails + 1;
-  loginGuard.set(peer, [next, next >= 5 ? Date.now() + 60_000 : 0]);
+  if (loginGuard.size > 1000) loginGuard.clear();
+  loginGuard.set(peer, [next, next >= LOGIN_FAIL_LIMIT ? now + LOGIN_WINDOW_MS : 0]);
+  try {
+    for (const spec of specs) {
+      await bumpGuard(env, spec.scope, spec.limit, now);
+    }
+    if (Math.random() < 0.05) {
+      await dbRun(env, "DELETE FROM login_guard WHERE updated_at < ?", [
+        isoFrom(now - 24 * 60 * 60 * 1000),
+      ]);
+    }
+  } catch {
+    /* 限速写入失败不阻断登录流程 */
+  }
 }
 
 function clientIp(request) {
@@ -2244,7 +2319,7 @@ async function readRawBody(request, maxBytes) {
 
 async function handleLogin(request, env, url) {
   const ip = clientIp(request);
-  if (loginTooBusy(ip)) {
+  if (await loginTooBusy(env, ip)) {
     return jsonResponse({ error: "尝试过于频繁，请 1 分钟后再试" }, 429);
   }
   const body = await readJsonBody(request);
@@ -2253,7 +2328,7 @@ async function handleLogin(request, env, url) {
   const pass = String(body.pass || "");
   const ok = timingSafeEqual(user, env.OTV_ADMIN_USER || "admin")
     && timingSafeEqual(pass, env.OTV_ADMIN_PASS || "");
-  noteLogin(ip, ok);
+  await noteLogin(env, ip, ok);
   if (!ok) return jsonResponse({ error: "账号或密码错误" }, 401);
   const token = await makeSession(env);
   const secure = url.protocol === "https:";
