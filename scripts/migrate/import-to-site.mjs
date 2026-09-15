@@ -23,10 +23,17 @@ const password = process.env.OTV_ADMIN_PASS
 
 let cookie = "";
 
+// 站点若开启了 ChatGPT 登录门禁（私有站点），用 OAI-Sites-Authorization 绕过门禁，
+// 后台自身的账号密码门禁照旧——这个头只是让脚本能到达 Worker。
+const bypass = process.env.OAI_SITES_AUTHORIZATION || "";
+function gateHeaders() {
+  return bypass ? { "oai-sites-authorization": `Bearer ${bypass}` } : {};
+}
+
 async function login() {
   const response = await fetch(`${base}/api/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...gateHeaders() },
     body: JSON.stringify({ user: process.env.OTV_ADMIN_USER || "admin", pass: password }),
   });
   if (!response.ok) throw new Error(`登录失败 HTTP ${response.status}: ${(await response.text()).slice(0, 160)}`);
@@ -35,7 +42,7 @@ async function login() {
 }
 
 async function post(pathname, { body, raw, contentType } = {}) {
-  const headers = { cookie };
+  const headers = { cookie, ...gateHeaders() };
   let payload;
   if (raw) {
     headers["content-type"] = contentType || "application/octet-stream";
