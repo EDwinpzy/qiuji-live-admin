@@ -1189,18 +1189,48 @@ async function huDirLoad() {
   } catch (e) { return null; }
 }
 async function huDirSave(h) {
-  try { (await huIdbOpen()).transaction("kv", "readwrite").objectStore("kv").put(h, "huDir"); } catch (e) {}
+  try {
+    const db = await huIdbOpen();
+    await new Promise((res, rej) => {
+      const tx = db.transaction("kv", "readwrite");
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error || new Error("indexeddb 写入失败"));
+      tx.onabort = () => rej(tx.error || new Error("indexeddb 写入被中断"));
+      tx.objectStore("kv").put(h, "huDir");
+    });
+    huLsSet(HU_DIR_NAME_KEY, h.name);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
-function huDirHint(h) {
-  document.getElementById("hu-dir-hint").textContent = h
-    ? "最新 zip 目录：" + h.name
-    : "首次使用「上传最新版本」需选择存放 python-backend.zip 的目录（如 android/app/src/main/assets/backend）";
+/* 目录句柄能不能跨会话保留，取决于浏览器有没有清站点数据（无痕 / 关闭时清除 → 每次都问）。
+   这里额外记一个"上次用的目录名"做线索：句柄没了但名字还在，就能明确告诉用户是浏览器没保留，
+   而不是含糊地再弹一次选择框。 */
+const HU_DIR_NAME_KEY = "otv_hu_dir_name", HU_LAST_UP_KEY = "otv_hu_last_upload";
+const huLsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } };
+const huLsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+function huDirHint(h, saveOk) {
+  const remembered = huLsGet(HU_DIR_NAME_KEY);
+  const lastUp = huLsGet(HU_LAST_UP_KEY);
+  const tail = lastUp ? "　·　上次上传：" + lastUp : "";
+  const el = document.getElementById("hu-dir-hint");
   document.getElementById("btn-hu-dir").style.display = h ? "" : "none";
+  if (h && saveOk !== false) {
+    el.textContent = `最新 zip 目录：${h.name}（已记住，以后一键直传；跨会话首次会再确认一次权限，不用重挑目录）${tail}`;
+  } else if (h) {
+    el.textContent = `最新 zip 目录：${h.name}（本次可用），但此浏览器不允许记住目录，下次还要重选。想彻底免选：本机跑 node scripts/ops/hu-upload.mjs${tail}`;
+  } else if (remembered) {
+    el.textContent = `上次用的目录「${remembered}」没被浏览器保留（无痕模式或"关闭时清除站点数据"会这样），需要重选一次。想彻底免选：本机跑 node scripts/ops/hu-upload.mjs${tail}`;
+  } else {
+    el.textContent = "首次使用「上传最新版本」需选择存放 python-backend.zip 的目录（如 android/app/src/main/assets/backend）";
+  }
 }
 /* 目录选择框弹出时页面会失焦。若页面一直没失焦、又迟迟没有结果，
    说明当前环境没法把选择框显示出来（内嵌浏览器、后台窗口常见），不能一直干等。 */
 function huPickDir() {
-  const p = window.showDirectoryPicker({mode: "read"});
+  // id 让浏览器记住上次选的位置：万一句柄没保留，重新打开也直接落在同一个目录
+  const p = window.showDirectoryPicker({mode: "read", id: "otv-hu-zip"});
   const guard = new Promise((_, rej) => {
     const t0 = Date.now();
     const iv = setInterval(() => {
@@ -1225,16 +1255,21 @@ async function huLatestFile() {
   let dh = await huDirLoad();
   if (!dh) {
     dh = await huPickDir();
-    await huDirSave(dh); huDirHint(dh);
+    huDirHint(dh, await huDirSave(dh));
+  } else if (await dh.queryPermission({mode: "read"}) !== "granted") {
+    // 句柄在、权限过期：这里弹的是权限确认，不是重新挑目录
+    let perm = "denied";
+    try { perm = await dh.requestPermission({mode: "read"}); } catch (e) { perm = "denied"; }
+    if (perm !== "granted") {
+      huDirHint(dh);
+      return {error: "浏览器没有给目录读取权限（可能上次点了「拒绝」）。点「更换目录」重选一次即可，或在本机跑 node scripts/ops/hu-upload.mjs。"};
+    }
   }
-  if (await dh.queryPermission({mode: "read"}) !== "granted"
-      && await dh.requestPermission({mode: "read"}) !== "granted")
-    return {error: "没有目录读取权限"};
   let best = null;
   for await (const ent of dh.values()) {
     if (ent.kind === "file" && ent.name.toLowerCase().endsWith(".zip")) {
       const f = await ent.getFile();
-      if (!best || f.lastModified > best.f.lastModified) best = {name: ent.name, f};
+      if (!best || f.lastModified > best.f.lastModified) best = {name: ent.name, f, dh};
     }
   }
   return best || {error: "所选目录里没有 zip——请指向 build_backend_zip.py 输出目录（含 python-backend.zip）"};
@@ -1242,7 +1277,7 @@ async function huLatestFile() {
 document.getElementById("btn-hu-dir").onclick = async () => {
   try {
     const dh = await huPickDir();
-    await huDirSave(dh); huDirHint(dh);
+    huDirHint(dh, await huDirSave(dh));
     toast("已更换最新 zip 目录：" + dh.name);
   } catch (e) { huDirErr(e); }
 };
@@ -1259,6 +1294,10 @@ document.getElementById("btn-hu-latest").onclick = async function () {
   document.getElementById("hu-fileinfo").textContent =
     `${pick.name} · ${huMb(pick.f.size)} · ${new Date(pick.f.lastModified).toLocaleString()}`;
   await huDoUpload(pick.f, this);
+  if (document.getElementById("hu-ok").style.display === "block") {
+    huLsSet(HU_LAST_UP_KEY, `${pick.name} · ${huMb(pick.f.size)} · ${new Date().toLocaleString()}`);
+    huDirHint(pick.dh, true);
+  }
 };
 (async () => { huDirHint(await huDirLoad()); })();
 document.getElementById("hu-status").onchange = e => {
