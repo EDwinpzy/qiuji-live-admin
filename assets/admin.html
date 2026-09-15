@@ -1231,10 +1231,14 @@ function huDirHint(h, saveOk) {
 function huPickDir() {
   // id 让浏览器记住上次选的位置：万一句柄没保留，重新打开也直接落在同一个目录
   const p = window.showDirectoryPicker({mode: "read", id: "otv-hu-zip"});
+  /* 看门狗只负责"催一句"，绝不丢弃用户真正选中的结果——
+     之前用 Promise.race 把结果 race 掉了：在选择框里停留超过 12s，用户后面选中的目录会被丢掉，
+     于是下次点按钮又弹一次（就是"每次都要重选"的根因）。 */
+  p.then((h) => { huDirSave(h).then((ok) => huDirHint(h, ok)); }, () => {});
   const guard = new Promise((_, rej) => {
     const t0 = Date.now();
     const iv = setInterval(() => {
-      if (document.hasFocus() && Date.now() - t0 > 12000) {
+      if (document.hasFocus() && Date.now() - t0 > 20000) {
         clearInterval(iv);
         rej(Object.assign(new Error("目录选择框没有弹出来"), {name: "PickerNotShownError"}));
       }
@@ -1254,8 +1258,7 @@ function huDirErr(e) {
 async function huLatestFile() {
   let dh = await huDirLoad();
   if (!dh) {
-    dh = await huPickDir();
-    huDirHint(dh, await huDirSave(dh));
+    dh = await huPickDir(); // 句柄已在 huPickDir 内保存并更新提示
   } else if (await dh.queryPermission({mode: "read"}) !== "granted") {
     // 句柄在、权限过期：这里弹的是权限确认，不是重新挑目录
     let perm = "denied";
@@ -1276,8 +1279,7 @@ async function huLatestFile() {
 }
 document.getElementById("btn-hu-dir").onclick = async () => {
   try {
-    const dh = await huPickDir();
-    huDirHint(dh, await huDirSave(dh));
+    const dh = await huPickDir(); // 句柄已在 huPickDir 内保存并更新提示
     toast("已更换最新 zip 目录：" + dh.name);
   } catch (e) { huDirErr(e); }
 };
