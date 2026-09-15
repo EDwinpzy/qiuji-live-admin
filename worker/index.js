@@ -1865,6 +1865,210 @@ async function vodSourceDiscover(env, siteUrl) {
   };
 }
 
+/** 迁移导入：把 CloudBase 导出快照写进新库（幂等，按主键 upsert；只由登录会话调用）。 */
+async function importSnapshot(env, snapshot) {
+  const stamp = nowIso();
+  const stats = { licenses: 0, activateLog: 0, hotupdatePkg: 0, hotupdateLog: 0, channels: 0, lines: 0, versions: 0, groups: 0, vod: 0 };
+  const chunk = async (rows, size, toStatement) => {
+    for (let i = 0; i < rows.length; i += size) {
+      const slice = rows.slice(i, i + size);
+      await dbBatch(env, slice.map(toStatement));
+    }
+  };
+
+  const licenses = Array.isArray(snapshot.licenses) ? snapshot.licenses : [];
+  await chunk(licenses, 40, (row) => [
+    `INSERT INTO licenses (code, plan, days, status, max_dev, devices, note, ticket,
+        sold_at, activated_at, expire_at, redeemed_at, redeemed_to, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(code) DO UPDATE SET
+       plan = excluded.plan, days = excluded.days, status = excluded.status,
+       max_dev = excluded.max_dev, devices = excluded.devices, note = excluded.note,
+       ticket = excluded.ticket, sold_at = excluded.sold_at, activated_at = excluded.activated_at,
+       expire_at = excluded.expire_at, redeemed_at = excluded.redeemed_at,
+       redeemed_to = excluded.redeemed_to, updated_at = excluded.updated_at`,
+    [
+      row.code, row.plan, row.days ?? 0, row.status || "active", row.max_dev ?? 2,
+      typeof row.devices === "string" ? row.devices : JSON.stringify(row.devices || []),
+      row.note || "", typeof row.ticket === "string" ? row.ticket : JSON.stringify(row.ticket || {}),
+      row.sold_at || null, row.activated_at || null, row.expire_at || null,
+      row.redeemed_at || null, row.redeemed_to || null,
+      row.created_at || stamp, row.updated_at || row.created_at || stamp,
+    ],
+  ]);
+  stats.licenses = licenses.length;
+
+  const logs = Array.isArray(snapshot.activateLog) ? snapshot.activateLog : [];
+  await dbRun(env, "DELETE FROM activate_log");
+  await chunk(logs, 60, (row) => [
+    "INSERT INTO activate_log (code, device_id, ip, result, at) VALUES (?, ?, ?, ?, ?)",
+    [row.code || null, row.device_id || null, row.ip || null, left(row.result, 64), row.at || stamp],
+  ]);
+  stats.activateLog = logs.length;
+
+  const packages = Array.isArray(snapshot.hotupdate?.packages) ? snapshot.hotupdate.packages : [];
+  await chunk(packages, 40, (row) => [
+    `INSERT INTO hotupdate_pkg (hot_version_code, hot_version_name, apk_min_version, apk_max_version,
+        object_key, file_size, sha256, notes, force_apply, status, publish_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(hot_version_code) DO UPDATE SET
+       hot_version_name = excluded.hot_version_name, apk_min_version = excluded.apk_min_version,
+       apk_max_version = excluded.apk_max_version, object_key = excluded.object_key,
+       file_size = excluded.file_size, sha256 = excluded.sha256, notes = excluded.notes,
+       force_apply = excluded.force_apply, status = excluded.status, publish_at = excluded.publish_at,
+       updated_at = excluded.updated_at`,
+    [
+      row.hot_version_code, row.hot_version_name || "", row.apk_min_version ?? 0,
+      row.apk_max_version ?? 2147483647, row.object_key, row.file_size ?? 0, row.sha256 || "",
+      row.notes || "", row.force_apply ? 1 : 0, row.status || "offline", row.publish_at || null,
+      row.created_at || stamp, row.updated_at || row.created_at || stamp,
+    ],
+  ]);
+  stats.hotupdatePkg = packages.length;
+
+  const huLogs = Array.isArray(snapshot.hotupdate?.logs) ? snapshot.hotupdate.logs : [];
+  await dbRun(env, "DELETE FROM hotupdate_log");
+  await chunk(huLogs, 60, (row) => [
+    `INSERT INTO hotupdate_log (device, apk_version, from_version, to_version, result, detail, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.device || "unknown", row.apk_version ?? null, row.from_version ?? null, row.to_version ?? null,
+      row.result || "", row.detail || "", row.created_at || stamp,
+    ],
+  ]);
+  stats.hotupdateLog = huLogs.length;
+
+  const channels = Array.isArray(snapshot.iptv?.channels) ? snapshot.iptv.channels : [];
+  for (const channel of channels) {
+    const existing = await dbFirst(env, "SELECT id FROM iptv_channel WHERE name = ? LIMIT 1", [channel.name]);
+    let id = existing?.id;
+    if (id) {
+      await dbRun(
+        env,
+        "UPDATE iptv_channel SET group_name = ?, logo = ?, sort_order = ?, enabled = ?, note = ?, updated_at = ? WHERE id = ?",
+        [
+          channel.group || "其他", channel.logo || "", channel.sort ?? 0,
+          channel.enabled === false ? 0 : 1, channel.note || "", stamp, id,
+        ],
+      );
+      await dbRun(env, "DELETE FROM iptv_line WHERE channel_id = ?", [id]);
+    } else {
+      const result = await dbRun(
+        env,
+        `INSERT INTO iptv_channel (name, group_name, logo, sort_order, enabled, note, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          channel.name, channel.group || "其他", channel.logo || "", channel.sort ?? 0,
+          channel.enabled === false ? 0 : 1, channel.note || "", stamp, stamp,
+        ],
+      );
+      id = result.meta?.last_row_id;
+    }
+    const lines = Array.isArray(channel.lines) ? channel.lines : [];
+    if (lines.length) {
+      await dbBatch(env, lines.map((line, index) => [
+        `INSERT INTO iptv_line (channel_id, url, sort_order, enabled, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          id, String(line.url || line), line.sort ?? index,
+          line.enabled === false ? 0 : 1, line.note || "", stamp,
+        ],
+      ]));
+    }
+    stats.channels += 1;
+    stats.lines += lines.length;
+  }
+
+  const versions = Array.isArray(snapshot.iptv?.versions) ? snapshot.iptv.versions : [];
+  await chunk(versions, 40, (row) => [
+    `INSERT INTO iptv_version (version, object_key, file_size, sha256, channels, lines, notes, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(version) DO UPDATE SET
+       object_key = excluded.object_key, file_size = excluded.file_size, sha256 = excluded.sha256,
+       channels = excluded.channels, lines = excluded.lines, notes = excluded.notes, status = excluded.status`,
+    [
+      row.version, row.object_key || "", row.file_size ?? 0, row.sha256 || "",
+      row.channels ?? 0, row.lines ?? 0, row.notes || "", row.status || "offline", row.created_at || stamp,
+    ],
+  ]);
+  stats.versions = versions.length;
+
+  const groups = Array.isArray(snapshot.iptv?.groups) ? snapshot.iptv.groups : [];
+  for (const [index, group] of groups.entries()) {
+    await dbRun(
+      env,
+      `INSERT INTO iptv_group (name, sort, created_at) VALUES (?, ?, ?)
+       ON CONFLICT(name) DO UPDATE SET sort = excluded.sort`,
+      [group.name, group.sort ?? index, stamp],
+    );
+  }
+  stats.groups = groups.length;
+
+  const iptvLogs = Array.isArray(snapshot.iptv?.logs) ? snapshot.iptv.logs : [];
+  if (iptvLogs.length) {
+    await dbRun(env, "DELETE FROM iptv_admin_log");
+    await chunk(iptvLogs, 60, (row) => [
+      "INSERT INTO iptv_admin_log (action, detail, created_at) VALUES (?, ?, ?)",
+      [left(row.action, 40), left(row.detail, 800), row.created_at || stamp],
+    ]);
+  }
+  const mode = snapshot.iptv?.mode;
+  if (mode === "auto" || mode === "manual") {
+    await dbRun(
+      env,
+      `INSERT INTO iptv_config (key, value, updated_at) VALUES ('mode', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [mode, stamp],
+    );
+  }
+
+  if (snapshot.announcement) {
+    await dbRun(env, "DELETE FROM announcements");
+    await dbRun(
+      env,
+      "INSERT INTO announcements (title, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      [
+        left(snapshot.announcement.title, 60), left(snapshot.announcement.content, 600),
+        snapshot.announcement.status || "published", stamp, stamp,
+      ],
+    );
+  }
+
+  const drafts = Array.isArray(snapshot.vod?.drafts) ? snapshot.vod.drafts : [];
+  if (drafts.length) {
+    await dbRun(env, "DELETE FROM vod_source_drafts");
+    await chunk(drafts, 40, (row) => [
+      `INSERT INTO vod_source_drafts (id, name, site_url, api_url, adapter_type, enabled, sort_order, revision, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        row.id, row.name, row.site_url, row.api_url || "", row.adapter_type,
+        row.enabled === false ? 0 : 1, row.sort_order ?? 0, row.revision ?? 1, row.updated_at || stamp,
+      ],
+    ]);
+    stats.vod = drafts.length;
+    const published = toInt(snapshot.vod?.publishedVersion, 0) ?? 0;
+    if (published > 0) {
+      const existing = await dbFirst(env, "SELECT version FROM vod_source_versions WHERE version = ?", [published]);
+      if (!existing) {
+        const config = {
+          schema: 1,
+          version: published,
+          sources: drafts.map((d) => ({
+            id: d.id, name: d.name, site_url: d.site_url, api_url: d.api_url || "",
+            adapter_type: d.adapter_type, enabled: d.enabled !== false, revision: d.revision ?? 1,
+          })),
+        };
+        const text = JSON.stringify(config);
+        await dbRun(
+          env,
+          "INSERT INTO vod_source_versions (version, config, sha256, published_at) VALUES (?, ?, ?, ?)",
+          [published, text, await sha256Hex(text), stamp],
+        );
+      }
+    }
+  }
+  return stats;
+}
+
 function cardsCsv(rows) {
   const header = "code,plan,days,price,note";
   const body = rows.map((r) => `${r.code},${r.plan},${r.days},${r.price},"${String(r.note || "").replace(/"/g, '""')}"`);
@@ -2098,6 +2302,29 @@ async function handleAdminApi(request, env, url) {
     if (!raw) return jsonResponse({ error: "图片过大（≤2MB）" });
     return jsonResponse(await hIptvLogoUpload(env, request, query, raw));
   }
+  if (route === "import_object") {
+    const key = String(query.get("key") || "");
+    if (!/^[A-Za-z0-9._\/-]{1,200}$/.test(key) || key.includes("..")) {
+      return jsonResponse({ error: "bad_key" });
+    }
+    const raw = await readRawBody(request, HU_BUFFER_MAX);
+    if (!raw) return jsonResponse({ error: `对象过大（≤${HU_BUFFER_MAX / 1048576}MB）` });
+    const bytes = new Uint8Array(raw);
+    try {
+      await putObject(env, key, bytes, String(query.get("type") || "application/octet-stream"));
+    } catch (error) {
+      return jsonResponse({ error: `对象写入失败: ${error.message || error}` });
+    }
+    return jsonResponse({ ok: true, key, size: bytes.byteLength, sha256: await sha256Hex(bytes) });
+  }
+  if (route === "delete_object") {
+    const key = String(query.get("key") || "");
+    if (!/^[A-Za-z0-9._\/-]{1,200}$/.test(key) || key.includes("..")) {
+      return jsonResponse({ error: "bad_key" });
+    }
+    await deleteObject(env, key);
+    return jsonResponse({ ok: true, key });
+  }
 
   const body = await readJsonBody(request);
   if (body === null) return jsonResponse({ error: "请求体不是 JSON" }, 400);
@@ -2282,6 +2509,35 @@ async function handleAdminApi(request, env, url) {
       return jsonResponse(await vodSourceTest(env, body));
     case "vod_source_publish":
       return jsonResponse(await rpcVodSourcePublish(env));
+    case "import_snapshot":
+      return jsonResponse({ ok: true, stats: await importSnapshot(env, body) });
+    case "export_snapshot": {
+      const [licensesRows, activateRows, packages, huLogs, iptvList, iptvVersions, iptvLogs, groups, announcement, vod] =
+        await Promise.all([
+          dbAll(env, "SELECT * FROM licenses ORDER BY code"),
+          dbAll(env, "SELECT code, device_id, ip, result, at FROM activate_log ORDER BY at"),
+          dbAll(env, "SELECT * FROM hotupdate_pkg ORDER BY hot_version_code"),
+          dbAll(env, "SELECT * FROM hotupdate_log ORDER BY created_at"),
+          rpcIptvList(env),
+          rpcIptvVersions(env, 200),
+          rpcIptvLogs(env, 500),
+          rpcIptvGroupList(env),
+          rpcAnnouncementAdminGet(env),
+          rpcVodSourceList(env),
+        ]);
+      return jsonResponse({
+        exportedAt: nowIso(),
+        licenses: licensesRows.map(licenseRowToJson),
+        activateLog: activateRows,
+        hotupdate: { packages: packages.map(huRowToJson), logs: huLogs },
+        iptv: {
+          channels: iptvList.channels, latest: iptvList.latest,
+          versions: iptvVersions.rows, logs: iptvLogs.rows, groups, mode: iptvList.mode,
+        },
+        announcement: announcement.ann,
+        vod: { drafts: vod.drafts, publishedVersion: vod.publishedVersion },
+      });
+    }
     default:
       return jsonResponse({ error: "not found" }, 404);
   }
