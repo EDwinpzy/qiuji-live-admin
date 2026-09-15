@@ -1778,7 +1778,7 @@ async function iptvAutoRun() {
 
 /* ---- 影视源草稿、发布与指定影片测试 ---- */
 let vodSourceRows = [], vodSourceEditId = null, vodSourceTestRow = null, vodSourceHls = null;
-let vodLatency = {}, vodSortLatency = false;
+let vodLatency = {}, vodLatSortDir = null; // null=配置顺序，asc=由快到慢，desc=由慢到快
 const VOD_LAT_KEY = "otv_vod_latency_v1";
 function vodLatLoad() {
   try { vodLatency = JSON.parse(localStorage.getItem(VOD_LAT_KEY) || "{}") || {}; } catch (e) { vodLatency = {}; }
@@ -1797,7 +1797,13 @@ function vodLatCell(s) {
 }
 function vodSyncSortUi() {
   const sub = document.getElementById("vod-source-list-sub");
-  if (sub) sub.textContent = vodSortLatency ? "按测速延时从快到慢显示" : "当前项目源按配置顺序显示";
+  if (sub) sub.textContent = vodLatSortDir === "asc" ? "按测速延时从快到慢显示"
+    : vodLatSortDir === "desc" ? "按测速延时从慢到快显示" : "当前项目源按配置顺序显示";
+}
+/* 点「延时」表头循环切换：配置顺序 → 由快到慢 → 由慢到快 → 配置顺序 */
+function vodFlipLatSort() {
+  vodLatSortDir = vodLatSortDir === null ? "asc" : vodLatSortDir === "asc" ? "desc" : null;
+  vodRenderRows();
 }
 function vodRows(payload) {
   if (Array.isArray(payload)) return payload;
@@ -1824,8 +1830,8 @@ function vodRenderRows() {
   vodSyncSortUi();
   if (!vodSourceRows.length) { table.innerHTML = '<div class="empty">暂无影视源，可从网站识别或手动新增。</div>'; return; }
   const order = vodSourceRows.map((s, i) => i);
-  if (vodSortLatency) {
-    // 排在最前的：测速成功（按毫秒升序）→ 失败 → 未测速，同档保持配置顺序
+  if (vodLatSortDir) {
+    // 分组固定：测速成功 → 失败 → 未测速；同档保持配置顺序，成功组内按毫秒排（升降随 vodLatSortDir）
     const rank = (i) => {
       const e = vodLatency[vodLatKey(vodSourceRows[i])];
       if (!e) return [2, 0];
@@ -1834,11 +1840,12 @@ function vodRenderRows() {
     order.sort((a, b) => {
       const ra = rank(a), rb = rank(b);
       if (ra[0] !== rb[0]) return ra[0] - rb[0];
-      if (ra[1] !== rb[1]) return ra[1] - rb[1];
+      if (ra[1] !== rb[1]) return vodLatSortDir === "desc" ? rb[1] - ra[1] : ra[1] - rb[1];
       return a - b;
     });
   }
-  table.innerHTML = `<table class="grid"><tr><th>顺序</th><th>名称</th><th>网站 / 接口</th><th>适配器</th><th>状态</th><th>延时</th><th>操作</th></tr>` +
+  const arrow = vodLatSortDir === "asc" ? " ▲" : vodLatSortDir === "desc" ? " ▼" : "";
+  table.innerHTML = `<table class="grid"><tr><th>顺序</th><th>名称</th><th>网站 / 接口</th><th>适配器</th><th>状态</th><th class="s" title="点击按延时排序" onclick="vodFlipLatSort()">延时${arrow}</th><th>操作</th></tr>` +
     order.map((i) => {
       const s = vodSourceRows[i];
       return `<tr>
@@ -1877,7 +1884,7 @@ async function vodSourceSpeedAll() {
   };
   await Promise.all([run(), run(), run()]);
   btn.disabled = false; btn.textContent = "全部测速";
-  vodSortLatency = true;
+  vodLatSortDir = "asc";
   vodRenderRows();
   toast(`已测速 ${total} 个源，按延时从快到慢排序`);
 }
