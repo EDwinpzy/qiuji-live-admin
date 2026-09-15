@@ -79,3 +79,8 @@ npm run build && npm run validate
 | `GET /api/state`（未登录） | 401（后台门禁生效） |
 | 正确密码登录 | 200 + 会话 Cookie |
 | 连续 5 次错误密码 | 第 6 次起 429（v5 修复前：12 次连发全部 401） |
+
+### v6（2026-09-15）：与后台最新口径对齐
+
+- 热更包校验必备条目补 `media_index.py`、`pinyin_map.json`——与 App `HotUpdateManager.REQUIRED_ENTRIES`、后台 `admin_server.HU_REQUIRED_ENTRIES` 完全一致；旧口径包现在会被拒（实测返回「zip 缺少必备条目: media_index.py, pinyin_map.json」），完整包正常入库。
+- `/objects/*` 补 `Content-Length`：全量下载、Range（`206` + `Content-Range`）、HEAD 三种形态都有正确长度，设备端下载进度不再缺字段。

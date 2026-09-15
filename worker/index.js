@@ -38,10 +38,12 @@ const HU_BUFFER_MAX = 96 * 1024 * 1024;
 const HU_CHUNK_MAX = 4 * 1024 * 1024;
 const HU_DIRECT_MAX = 5 * 1024 * 1024;
 const HU_UPLOAD_UID_RE = /^[0-9a-f]{8,32}$/;
+// 与 App HotUpdateManager.REQUIRED_ENTRIES / 后台 admin_server.HU_REQUIRED_ENTRIES 同口径。
+// 2026-09-15 起设备端本地搜索索引（media_index.py / pinyin_map.json）也是必备条目。
 const HU_REQUIRED_ENTRIES = [
   "proxy.py", "hhkan.py", "scraper.py", "team_backdrop.py", "decrypt_stream.js",
-  "douban_catalog.py", "douban_snapshot.json", "vod_api.py",
-  "vod_sources.py", "vod_sources.default.json",
+  "douban_catalog.py", "douban_snapshot.json", "media_index.py", "pinyin_map.json",
+  "vod_api.py", "vod_sources.py", "vod_sources.default.json",
 ];
 
 const IPTV_KEY_LATEST = "iptv/iptv-latest.m3u";
@@ -2687,16 +2689,20 @@ async function handleDevice(request, env, url) {
     }
     const object = await env.BUCKET.get(key, options);
     if (!object) return textResponse("not found", 404);
+    const length = options.range
+      ? (options.range.length ?? object.size - options.range.offset)
+      : object.size;
     const headers = {
       "content-type": object.httpMetadata?.contentType || "application/octet-stream",
       "cache-control": "public, max-age=300",
       etag: object.httpEtag,
       "accept-ranges": "bytes",
+      // 热更包 40MB：设备端按 Content-Length 显示/校验进度，HEAD 也依赖它
+      "content-length": String(length),
       ...CORS_HEADERS,
     };
     if (options.range) {
       const start = options.range.offset;
-      const length = options.range.length ?? object.size;
       headers["content-range"] = `bytes ${start}-${start + length - 1}/${object.size}`;
     }
     return new Response(object.body, { status: options.range ? 206 : 200, headers });
