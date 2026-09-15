@@ -1194,13 +1194,37 @@ async function huDirSave(h) {
 function huDirHint(h) {
   document.getElementById("hu-dir-hint").textContent = h
     ? "最新 zip 目录：" + h.name
-    : "首次使用「上传最新版本」需选择本地 zip 输出目录（build_backend_zip.py 产物处）";
+    : "首次使用「上传最新版本」需选择存放 python-backend.zip 的目录（如 android/app/src/main/assets/backend）";
   document.getElementById("btn-hu-dir").style.display = h ? "" : "none";
+}
+/* 目录选择框弹出时页面会失焦。若页面一直没失焦、又迟迟没有结果，
+   说明当前环境没法把选择框显示出来（内嵌浏览器、后台窗口常见），不能一直干等。 */
+function huPickDir() {
+  const p = window.showDirectoryPicker({mode: "read"});
+  const guard = new Promise((_, rej) => {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      if (document.hasFocus() && Date.now() - t0 > 12000) {
+        clearInterval(iv);
+        rej(Object.assign(new Error("目录选择框没有弹出来"), {name: "PickerNotShownError"}));
+      }
+    }, 400);
+    p.then(() => clearInterval(iv), () => clearInterval(iv));
+  });
+  return Promise.race([p, guard]);
+}
+function huDirErr(e) {
+  const err = document.getElementById("hu-err");
+  if (e && e.name === "AbortError") return; // 自己点了取消，不用报错
+  err.textContent = (e && e.name === "PickerNotShownError")
+    ? "目录选择框没有弹出来——当前浏览器不能直读本地目录（Codex 内嵌浏览器、后台标签页常见）。请用 Chrome / Edge 桌面窗口打开本页，或改用「上传所选文件」。"
+    : "目录选择失败：" + ((e && e.message) || "未知原因") + "——可改用「上传所选文件」，或用 Chrome / Edge 桌面窗口重试。";
+  err.style.display = "block";
 }
 async function huLatestFile() {
   let dh = await huDirLoad();
   if (!dh) {
-    dh = await window.showDirectoryPicker({mode: "read"});
+    dh = await huPickDir();
     await huDirSave(dh); huDirHint(dh);
   }
   if (await dh.queryPermission({mode: "read"}) !== "granted"
@@ -1217,10 +1241,10 @@ async function huLatestFile() {
 }
 document.getElementById("btn-hu-dir").onclick = async () => {
   try {
-    const dh = await window.showDirectoryPicker({mode: "read"});
+    const dh = await huPickDir();
     await huDirSave(dh); huDirHint(dh);
     toast("已更换最新 zip 目录：" + dh.name);
-  } catch (e) {}
+  } catch (e) { huDirErr(e); }
 };
 document.getElementById("btn-hu-latest").onclick = async function () {
   const err = document.getElementById("hu-err");
@@ -1230,7 +1254,7 @@ document.getElementById("btn-hu-latest").onclick = async function () {
   }
   let pick;
   try { pick = await huLatestFile(); }
-  catch (e) { return; }  // 用户取消了目录选择
+  catch (e) { huDirErr(e); return; }
   if (pick.error) { err.textContent = pick.error; err.style.display = "block"; return; }
   document.getElementById("hu-fileinfo").textContent =
     `${pick.name} · ${huMb(pick.f.size)} · ${new Date(pick.f.lastModified).toLocaleString()}`;
