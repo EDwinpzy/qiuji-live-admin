@@ -6,7 +6,7 @@ My TV 的云端服务，替代原腾讯云 CloudBase 环境，数据与对象自
 |---|---|
 | otv-admin Web 函数（Python） | 同一个 Worker 的 `/api/*` |
 | activate / hotupdate 云函数 | `/activate`、`/hotupdate/*` |
-| iptv-rebuild 定时函数 | `/iptv/refresh`（外部定时调用）+ 后台「自动重建」 |
+| iptv-rebuild 定时函数 | 站点内置每日自触发（06:30 后首个访问）+ 后台「自动重建」+ `/iptv/refresh`（外部强制触发） |
 | PostgreSQL + RPC | D1（`DB` 绑定），表结构见 `drizzle/0001_init.sql` |
 | pgstore 公开桶 | R2（`BUCKET` 绑定），key 布局不变（`backend-hu16.zip`、`iptv/…`） |
 
@@ -78,7 +78,7 @@ node scripts/ops/hu-upload.mjs --dry-run  # 只登录看看要传什么，不传
 
 - 热更包分片重组上限 96MB（Worker 内存限制）；更大的包请在本机签发后用直传，或拆包。
 - 电视源「自动重建」受 Worker 子请求数限制，单次默认测 60 条线路（`OTV_IPTV_PROBES` 可调，原实现 ~520 条）。
-- 每日自动推流没有内置定时器：用外部定时器（如 GitHub Actions）每天 `POST /iptv/refresh?token=…`。
+- 每日自动推流不需要本机也不需要外部定时器：每天 06:30（北京时间）之后站点的第一个访问会顺带触发一次重建（仅 auto 模式）；也可用 `POST /iptv/refresh?token=…` 从外部强制触发。
 
 ## 切域名清单（脱离 CloudBase）
 
@@ -91,7 +91,7 @@ node scripts/ops/hu-upload.mjs --dry-run  # 只登录看看要传什么，不传
    `IptvRepository.SOURCES[0]` → `…/iptv/latest`（两个工程各一份）。
 3. **数据同步**：切之前再跑一次增量同步（旧站仍在被使用，卡密/激活记录会变）：
    `node scripts/migrate/export-cloudbase.mjs` → `node scripts/migrate/import-to-site.mjs <快照目录> <站点域名>`。
-4. **每日推流**：只在站点切到「自动模式」后才需要——接一个定时器调用 `scripts/ops/iptv-refresh.mjs`（或直接 POST `/iptv/refresh?token=…`），替代 CloudBase 每天 06:30 的 `iptv-rebuild`。当前是托管模式，`/iptv/refresh` 会直接跳过，不覆盖手工列表。
+4. **每日推流**：已内置在站点里（v12）——每天 06:30（北京时间）之后第一个访问自动触发重建，不依赖本机、也不需要外部定时器；托管（manual）模式下自动跳过，不覆盖手工列表。要立刻跑一次，用后台「立即自动重建」，或 `POST /iptv/refresh?token=…`（`scripts/ops/iptv-refresh.mjs` 是这条的封装）。
 5. **网页版**：`otv-web`（`proxy.py` + `www/`，234KB Python）仍在 CloudBase；已把 `OTV_LICENSE_ENDPOINT`、`IPTV_SOURCES[0]` 指向新站点（卡密/电视源已解耦），网页版本体与足球兜底中继仍跑在 CloudBase。
 6. **收尾**：设备端观察一个版本周期后，CloudBase 的 activate / hotupdate / iptv-rebuild / otv-admin 可下线，PG 与桶做一次终态归档。
 

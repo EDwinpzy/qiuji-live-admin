@@ -1346,9 +1346,9 @@ async function loadIptv(soft) {
   const sub = document.getElementById("iptv-mode-sub");
   sub.textContent = iptvMode === "manual"
     ? "托管模式：每日自动推流已暂停，latest 仅随手动发布变化"
-    : "自动模式：每日 06:30 云函数拉上游→测活→推流（精编名单+线路池语义）";
+    : "自动模式：每日 06:30 后云端自动拉上游→测活→推流（精编名单+线路池语义）";
   document.getElementById("iptv-mode-card").innerHTML = `<table class="grid">
-    <tr><td class="dim" style="width:180px">模式</td><td>${iptvMode === "manual" ? '<span class="st warn">◐ 托管（manual）</span> · 手动发布列表生效，自动推流跳过' : '<span class="st ok">● 自动（auto）</span> · 每日 06:30 自动推流'}</td></tr>
+    <tr><td class="dim" style="width:180px">模式</td><td>${iptvMode === "manual" ? '<span class="st warn">◐ 托管（manual）</span> · 手动发布列表生效，自动推流跳过' : '<span class="st ok">● 自动（auto）</span> · 每日 06:30 后云端自动推流'}</td></tr>
     ${d.latest ? `<tr><td class="dim">最新发布</td><td>v${d.latest.version} · ${d.latest.channels} 频道 ${d.latest.lines} 线 · ${esc(fmtT(d.latest.createdAt))} · ${esc(d.latest.notes || "")}</td></tr>` : `<tr><td class="dim">最新发布</td><td class="dim">从未发布（当前 latest 为自动推流产物）</td></tr>`}</table>`;
   // 分组下拉 + datalist（合并分组注册表：空分组也能在频道编辑里选用）
   const gs = [...new Set([...groups, ...iptvGroups.map(g => g.name)])].sort((a, b) => a.localeCompare(b, "zh"));
@@ -1787,7 +1787,7 @@ async function iptvGroupMove(id, delta) {
 }
 /* ---- 自动管理一键重建（2026-09-05 需求③：找源+测活+推送） ---- */
 async function iptvAutoRun() {
-  if (!confirm("立即执行自动重建？\n\n拉上游聚合源 → 全线测活（最长约 45s）→ 剔死线 → 推送 latest。\n自动模式下与每日云函数同产物；托管模式下 latest 会被覆盖（可 ④ 回滚）。")) return;
+  if (!confirm("立即执行自动重建？\n\n拉上游聚合源 → 全线测活（最长约 45s）→ 剔死线 → 推送 latest。\n自动模式下与每日自动推流同产物；托管模式下 latest 会被覆盖（可 ④ 回滚）。")) return;
   const card = document.getElementById("iptv-mode-card");
   card.innerHTML = `<div class="empty">⟳ 自动重建执行中：拉源 + 测活（最长 ~45s，请勿关闭页面）…</div>`;
   const d = await api("iptv_auto_run");

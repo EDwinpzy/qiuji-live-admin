@@ -59,10 +59,19 @@ const server = http.createServer(async (req, res) => {
     body: ["GET", "HEAD"].includes(req.method) ? undefined : body,
   });
   try {
-    const response = await worker.fetch(request, env, {});
+    // 提供最小 ctx：让 worker 的 waitUntil（每日自动刷新）在本机也能跑到
+    const waits = [];
+    const ctx = {
+      waitUntil: (promise) => { const p = Promise.resolve(promise); waits.push(p); p.catch(() => {}); },
+      passThroughOnException: () => {},
+    };
+    const response = await worker.fetch(request, env, ctx);
     res.writeHead(response.status, Object.fromEntries(response.headers));
     const buffer = Buffer.from(await response.arrayBuffer());
     res.end(buffer);
+    if (waits.length) {
+      Promise.allSettled(waits).then(() => console.log(`[dev] ${waits.length} 个后台任务已收尾（waitUntil）`));
+    }
   } catch (error) {
     res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
     res.end(`dev server error: ${error.stack || error}`);

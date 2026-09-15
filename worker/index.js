@@ -1117,6 +1117,57 @@ async function rpcIptvSetMode(env, mode) {
   return { ret: 0, mode };
 }
 
+/* ---------------- 每日自动刷新（云端自触发） ----------------
+   站点没有 Cloudflare Cron，改成「顺带触发」：设备或后台访问时看一眼今天跑没跑过，没跑过就在
+   响应之后补一次（waitUntil，不拖慢请求）。仅 auto 模式生效，托管模式不会覆盖手工列表。
+   每天最多 2 次尝试，失败也记账，避免上游抖动时被打爆。 */
+const IPTV_AUTO_KEY = "auto_refresh_day";
+const IPTV_AUTO_CUTOFF = 6 * 60 + 30; // 每天 06:30（Asia/Shanghai），沿用旧 CloudBase 时刻
+const IPTV_AUTO_MAX_TRIES = 2;
+const IPTV_AUTO_BUDGET_MS = 20_000; // waitUntil 只有 ~30s 收尾窗口，够跑一轮测活
+const IPTV_AUTO_PROBES = 40;
+
+function iptvAutoDayKey(now = Date.now()) {
+  const sh = new Date(now + 8 * 3600 * 1000); // 固定 UTC+8，中国不用夏令时
+  if (sh.getUTCHours() * 60 + sh.getUTCMinutes() < IPTV_AUTO_CUTOFF) sh.setUTCDate(sh.getUTCDate() - 1);
+  return `${sh.getUTCFullYear()}-${String(sh.getUTCMonth() + 1).padStart(2, "0")}-${String(sh.getUTCDate()).padStart(2, "0")}`;
+}
+
+async function maybeDailyIptv(env) {
+  try {
+    const rows = await dbAll(env, "SELECT key, value FROM iptv_config WHERE key IN (?, ?)", ["mode", IPTV_AUTO_KEY]);
+    const cfg = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    if ((cfg.mode || "auto") !== "auto") return;
+    const want = iptvAutoDayKey();
+    const [day, state = ""] = String(cfg[IPTV_AUTO_KEY] || "").split("|");
+    const tries = state.startsWith("try") ? Number(state.slice(3)) || 0 : 0;
+    if (day === want && (state === "ok" || tries >= IPTV_AUTO_MAX_TRIES)) return;
+    const attempt = day === want ? tries + 1 : 1;
+    const mark = (value) =>
+      dbRun(
+        env,
+        `INSERT INTO iptv_config (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        [IPTV_AUTO_KEY, `${want}|${value}`, nowIso()],
+      );
+    await mark(`try${attempt}`); // 先记账再跑，避免并发重复触发
+    const out = await rebuildIptv(env, {
+      mode: "auto",
+      budgetMs: IPTV_AUTO_BUDGET_MS,
+      maxProbes: IPTV_AUTO_PROBES,
+    });
+    if (out?.skipped) return;
+    if (out?.error) {
+      await iptvLog(env, "auto_refresh", `第 ${attempt} 次失败：${out.error}`);
+      return;
+    }
+    await mark("ok");
+    await iptvLog(env, "auto_refresh", `v${out.version} · ${out.channels} 频道 / ${out.lines} 线（第 ${attempt} 次）`);
+  } catch {
+    /* 自动刷新失败不影响正常请求 */
+  }
+}
+
 async function rpcIptvGroupList(env) {
   const rows = await dbAll(
     env,
@@ -2795,7 +2846,7 @@ async function handleDevice(request, env, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -2821,6 +2872,9 @@ export default {
         },
       });
     }
+
+    // 每日自动刷新：挂在真实业务请求后面（响应先回，重建在等待窗口里跑完）
+    if (ctx?.waitUntil) ctx.waitUntil(maybeDailyIptv(env));
 
     if (path.startsWith("/api/")) {
       return handleAdminApi(request, env, url);
