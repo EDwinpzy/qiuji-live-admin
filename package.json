@@ -1,0 +1,12 @@
+{
+  "name": "mytv-cloud",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate-artifact.mjs",
+    "dev": "node scripts/dev/dev-server.mjs",
+    "seed": "node scripts/dev/seed-dev.mjs",
+    "smoke": "node scripts/dev/smoke.mjs"
+  }
+}

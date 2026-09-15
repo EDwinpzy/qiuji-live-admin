@@ -1,0 +1,1922 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My TV 后台管理</title>
+<!-- 2026-09-05 二次重设计：中性专业暗色（石墨底 + 蓝单强调 + 小圆角卡片），应用户「换个正常点的风格」。
+     同日初版「票房小窗」主题化设计存档于 _archive-20260905-admin/admin-20260905-票房小窗.html。
+     仅云端形态：本文件 = 云端 otv-admin 函数的 UI 源码（build_admin_function.py 打包）。
+     v1.22 favicon 相对路径约定保留：云端经网关 /admin/ 子路径部署。 -->
+<link rel="icon" type="image/png" href="logo.png">
+<style>
+/* ==== 中性专业暗色 · tokens（2026-09-05 风格二：去主题化，正常后台） ==== */
+:root{
+  color-scheme:dark;
+  --bg:#0f1216; --bg2:#151920; --bg3:#1b2029;
+  --line:#272d38; --line2:#20252e;
+  --accent:#4f8cff; --accent-hi:#6ba1ff; --accent-dim:#33507f; --accent-strong:#2f6be0;
+  --txt:#e7e9ee; --dim:#a2a9b6; --faint:#7d8593;
+  --ok:#42c36d; --bad:#e06554; --warn:#e2a84e;
+  --mono:Consolas,"Cascadia Mono","Courier New",monospace;
+  --sans:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  --r:6px; --r-lg:8px;
+  /* 旧变量别名：JS 内联样式沿用旧名，指向同一套新值 */
+  --amber:var(--accent); --brass:var(--accent); --brass-hi:var(--accent-hi); --brass-dim:var(--accent-dim);
+  --paper:var(--txt); --edge:var(--line); --edge2:var(--line2);
+  --wood:var(--bg); --wood2:var(--bg2); --wood3:var(--bg3);
+  --panel:var(--bg2); --panel2:var(--bg3); --green:var(--ok);
+}
+*{box-sizing:border-box}
+html{scrollbar-color:#2a3140 var(--bg)}
+body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.55 var(--sans)}
+::selection{background:var(--accent-strong);color:#fff}
+:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+input,select,button,textarea{font:inherit;color:inherit}
+input{caret-color:var(--accent)}
+input::placeholder,textarea::placeholder{color:var(--faint)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a3140;border:2px solid var(--bg);border-radius:5px}
+::-webkit-scrollbar-thumb:hover{background:#3a4356}
+::-webkit-scrollbar-track{background:var(--bg)}
+
+/* ==== 顶栏 ==== */
+.marquee{position:sticky;top:0;z-index:7;height:48px;display:flex;align-items:center;gap:22px;padding:0 20px;
+  background:var(--bg2);border-bottom:1px solid var(--line)}
+.brand{display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:var(--txt);white-space:nowrap}
+.brand img{width:20px;height:20px;object-fit:contain}
+.mq-cell{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:12px;white-space:nowrap}
+.mq-cell b{color:var(--txt);font-family:var(--mono);font-weight:400;font-variant-numeric:tabular-nums}
+.lamp{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--ok);flex:none}
+.lamp.err{background:var(--bad)}
+.lamp.idle{background:#4a5160}
+.blackout{color:var(--faint);font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;white-space:nowrap}
+.blackout.on{color:var(--warn)}
+.mq-right{margin-left:auto;color:var(--faint);font-size:11.5px;white-space:nowrap}
+
+/* ==== 骨架：左侧导航 / 主区 / 右状态栏 ==== */
+.stage{display:grid;grid-template-columns:200px minmax(0,1fr) 264px;min-height:calc(100vh - 88px)}
+
+/* 左：导航 */
+.rail{position:sticky;top:48px;align-self:start;max-height:calc(100vh - 48px);overflow-y:auto;
+  border-right:1px solid var(--line);padding:12px 9px;background:#12151b;display:flex;flex-direction:column;gap:2px}
+.rail-grp{font-size:10.5px;letter-spacing:.14em;color:var(--faint);margin:13px 0 5px 10px}
+.rail-grp:first-child{margin-top:0}
+.verbs button, .plaque{appearance:none;width:100%;display:flex;align-items:center;gap:9px;text-align:left;
+  padding:7px 10px;border:none;border-radius:var(--r);background:none;
+  font-size:13px;color:var(--dim);cursor:pointer;
+  transition:color .15s,background .15s}
+.verbs button svg,.plaque svg{width:16px;height:16px;flex:none}
+.verbs button:hover,.plaque:hover{color:var(--txt);background:var(--bg3)}
+.verbs button.on,.plaque.on{color:var(--accent-hi);background:rgba(79,140,255,.13)}
+.verbs button .n,.plaque .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:0}
+.rail-foot{margin-top:auto;padding:11px 10px 2px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--faint);line-height:1.7}
+
+/* 中：主区 */
+section{padding:0 0 26px}
+.window{min-width:0;padding:20px 26px 64px}
+.w-head{display:flex;align-items:baseline;gap:13px;margin:2px 0 16px;flex-wrap:wrap}
+.w-head h1{font-size:17px;font-weight:600;color:var(--txt);margin:0}
+.w-head .sub{color:var(--faint);font-size:12px}
+
+/* KPI 条 */
+.kpis{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg2);margin:0 0 18px;overflow:hidden}
+.kpis .cell{flex:1 1 130px;min-width:130px;padding:12px 16px;border-right:1px solid var(--line2);border-top:1px solid var(--line2);margin-top:-1px}
+.kpis .cell .l,.kpis .cell span{display:block;font-size:10.5px;letter-spacing:.06em;color:var(--faint)}
+.kpis .cell b{display:block;font-family:var(--mono);font-size:20px;font-weight:400;color:var(--txt);font-variant-numeric:tabular-nums;margin-top:2px}
+.kpis .cell b.amber{color:var(--accent-hi)}
+.kpis .cell b.red{color:var(--bad)}
+.kpis .cell b.green{color:var(--ok)}
+
+/* 面板与小节头 */
+.panel{margin-top:20px}
+.secthead{display:flex;align-items:baseline;gap:13px;margin:0 0 10px;flex-wrap:wrap}
+.secthead h2{font-size:14.5px;font-weight:600;color:var(--txt);margin:0}
+.secthead .sub{color:var(--faint);font-size:11.5px}
+.secthead .spring{flex:1}
+
+/* 数据表 */
+.gridwrap{min-width:0}
+table.grid{width:100%;border-collapse:collapse}
+table.grid th{font-size:11px;letter-spacing:.05em;color:var(--dim);font-weight:500;text-align:left;white-space:nowrap;
+  padding:7px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+table.grid th.s{cursor:pointer}
+table.grid th.s:hover{color:var(--txt)}
+table.grid td{padding:7px 12px;border-bottom:1px solid var(--line2);font-size:12.5px;vertical-align:middle}
+table.grid tr:hover td{background:rgba(255,255,255,.03)}
+tr.grp td{background:var(--bg3);color:var(--dim);font-size:11.5px;letter-spacing:.04em;padding:5px 12px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.dim{color:var(--dim)}
+.lbl{color:var(--txt)}
+.st{white-space:nowrap}
+.st.ok{color:var(--ok)}
+.st.bad{color:var(--bad)}
+.st.warn{color:var(--warn)}
+.tag{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:1px 8px;font-size:11.5px;color:var(--dim);white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:rgba(66,195,109,.4)}
+.tag.bad{color:var(--bad);border-color:rgba(224,101,84,.4)}
+.tag.warn{color:var(--warn);border-color:rgba(226,168,78,.4)}
+.chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:4px;padding:1px 7px;margin-right:6px;font-family:var(--mono);font-size:11px;color:var(--dim);max-width:100%}
+.chip code{max-width:9.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.chip .x{color:var(--bad);cursor:pointer}
+.chip .x:hover{color:var(--bad);text-decoration:underline}
+.empty{border:1px dashed var(--line);border-radius:var(--r-lg);background:var(--bg2);color:var(--faint);padding:16px 18px;font-size:12.5px}
+.empty code{font-family:var(--mono)}
+.sk{padding:6px 0}
+.sk i{display:block;height:12px;margin:9px 0;background:#1a1f28;border-radius:4px;border:0}
+
+/* 工具行与表单 */
+.toolbar{display:flex;align-items:center;gap:9px;margin:0 0 12px;flex-wrap:wrap}
+.hint{color:var(--faint);font-size:11.5px}
+.pager{display:flex;align-items:center;gap:12px;margin-top:12px;color:var(--dim);font-size:12px}
+.formgrid{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px 18px;margin:0 0 6px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg2)}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:11.5px;letter-spacing:.03em;color:var(--dim)}
+label.f.wide{grid-column:1/-1}
+label.f .inline{display:flex;gap:8px}
+input,select,textarea{background:#0c0f13;border:1px solid var(--line);border-radius:var(--r);color:var(--txt);padding:6px 10px;font-size:12.5px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(79,140,255,.18)}
+input:disabled{opacity:.55;cursor:not-allowed}
+input[type=checkbox]{width:auto;padding:0;accent-color:var(--accent)}
+input[type=file]{padding:5px}
+select{padding:5.5px 8px}
+.formfoot{display:flex;align-items:center;gap:10px;margin:10px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg2)}
+.formfoot:empty{display:none}
+/* 公告发布表单（2026-09-07 需求⑨美化）：面板内独立表单区，标签行+字数计数+分隔操作栏 */
+.ann-form{display:flex;flex-direction:column;gap:14px;max-width:820px;padding:4px 2px 2px}
+.ann-field{display:flex;flex-direction:column;gap:6px}
+.ann-label{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;letter-spacing:.03em;color:var(--dim)}
+.ann-count{font-variant-numeric:tabular-nums;color:var(--faint);font-size:11px}
+.ann-field input,.ann-field textarea{padding:8px 12px;font-size:13px;line-height:1.55}
+.ann-field textarea{min-height:110px}
+.ann-actions{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);margin-top:2px;padding-top:14px;flex-wrap:wrap}
+/* 折叠区（低频操作收起） */
+details.fold{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--bg2);margin-top:10px}
+details.fold>summary{cursor:pointer;padding:9px 14px;font-size:12px;color:var(--dim);list-style:none;user-select:none}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"▸";color:var(--faint);margin-right:8px}
+details.fold[open]>summary{border-bottom:1px solid var(--line2);color:var(--txt)}
+details.fold[open]>summary::before{content:"▾"}
+details.fold .inner{padding:12px 14px}
+
+/* 按钮 */
+button.act{background:var(--accent-strong);border:1px solid var(--accent-strong);border-radius:var(--r);color:#fff;font-weight:500;padding:7px 20px;cursor:pointer;transition:background .15s}
+button.act:hover{background:#2a60cf;border-color:#2a60cf}
+button.act:disabled{opacity:.55;cursor:default}
+button.ghost{background:none;border:1px solid var(--line);border-radius:var(--r);color:var(--dim);padding:6.5px 16px;cursor:pointer;transition:color .15s,border-color .15s}
+button.ghost:hover{color:var(--accent-hi);border-color:var(--accent-dim)}
+button.ghost:disabled{opacity:.4;cursor:default}
+button.mini{padding:2.5px 10px;font-size:11.5px}
+button.ghost.mini{padding:2.5px 10px}
+.errbox,.okbox{display:none;margin:12px 0 0;border:1px solid var(--bad);border-radius:var(--r);color:var(--bad);padding:9px 14px;font-size:12.5px;background:rgba(224,101,84,.07)}
+.okbox{border-color:rgba(66,195,109,.5);color:var(--ok);background:rgba(66,195,109,.06)}
+.okbox b{color:var(--txt)}
+.okbox code{font-family:var(--mono);color:var(--accent-hi)}
+
+/* 右：运行状态栏 */
+.board{position:sticky;top:48px;align-self:start;max-height:calc(100vh - 48px);overflow-y:auto;
+  border-left:1px solid var(--line);padding:16px 16px 14px;background:#12151b}
+.board h3{font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--txt);margin:0 0 12px}
+.board .big{padding:8px 2px 10px;border-bottom:1px solid var(--line)}
+.board .big .l{font-size:10.5px;letter-spacing:.06em;color:var(--faint)}
+.board .big .v{font-family:var(--mono);font-size:23px;color:var(--accent-hi);font-variant-numeric:tabular-nums;margin-top:2px}
+.board .b-sect{font-size:10.5px;letter-spacing:.12em;color:var(--faint);margin:15px 0 3px}
+.board .b-row{display:flex;align-items:center;gap:9px;padding:7px 2px;border-bottom:1px solid var(--line2);font-size:12px;color:var(--dim)}
+.board .b-row b{margin-left:auto;font-family:var(--mono);font-weight:400;color:var(--txt);font-variant-numeric:tabular-nums;white-space:nowrap}
+.board .b-row .lamp{margin-left:2px}
+
+/* 底：状态条 */
+.echo{position:fixed;left:0;right:0;bottom:0;z-index:8;height:40px;display:flex;align-items:center;gap:11px;
+  padding:0 22px;background:var(--bg2);border-top:1px solid var(--line)}
+.echo .rc-stamp{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:none;
+  border:1.5px solid var(--ok);border-radius:50%;color:var(--ok);font-size:11px;font-weight:700}
+.echo.err .rc-stamp{border-color:var(--bad);color:var(--bad)}
+.echo time{font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap}
+.echo .msg{font-size:12.5px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.echo.err .msg{color:var(--bad)}
+.echo .tail{margin-left:auto;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.echo.flash .rc-stamp{animation:punch .28s ease-out}
+@keyframes punch{0%{transform:scale(1.3)}100%{transform:scale(1)}}
+
+/* 行脉冲：数据刷新 diff 出的新增/变更行（280ms） */
+tr.pulse td{animation:rowpulse .28s ease-out}
+@keyframes rowpulse{0%{background:rgba(79,140,255,.16);box-shadow:inset 1px 0 0 var(--accent)}100%{background:rgba(79,140,255,.02)}}
+
+/* 检索聚焦（未命中行退暗纹）与行悬停让光 */
+table.grid td{transition:opacity .15s,background .15s}
+tr.miss td{opacity:.38}
+table.pool:hover tr:not(.miss):not(:hover) td{opacity:.72}
+table.pool tr:not(.miss):hover td{background:rgba(255,255,255,.05)}
+
+/* KPI/状态数字变化翻牌 */
+.flip{animation:flipin .26s ease-out}
+@keyframes flipin{0%{opacity:0;transform:translateY(7px)}100%{opacity:1;transform:translateY(0)}}
+
+/* 登录与浮层 */
+.veil{position:fixed;inset:0;z-index:9;background:rgba(5,7,10,.72);backdrop-filter:blur(3px)}
+.veil-panel{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:330px;
+  border:1px solid var(--line);border-radius:10px;background:var(--bg2);padding:24px 26px 22px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.veil-panel.wide{width:660px;max-width:94vw;top:46%;max-height:88vh;overflow:auto}
+.veil-panel.play{width:740px}
+.veil-brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;font-size:15px;font-weight:600;color:var(--txt)}
+.veil-brand img{width:22px;height:22px}
+.veil-head{display:flex;align-items:baseline;gap:13px;margin-bottom:14px}
+.veil-head h2{margin:0;font-size:14.5px;font-weight:600;color:var(--txt)}
+.veil-head .sub{color:var(--faint);font-size:11.5px;font-family:var(--mono)}
+.veil-head .ops{margin-left:auto;display:flex;gap:8px;white-space:nowrap}
+
+/* 动效纪律：≤300ms，reduced-motion 全禁 */
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+
+/* 响应式 */
+.hide-narrow{display:inline-flex}
+@media (max-width:1180px){
+  .stage{grid-template-columns:200px minmax(0,1fr)}
+  .board{display:none}
+}
+@media (max-width:920px){
+  .stage{grid-template-columns:1fr;min-height:0}
+  .rail{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;align-items:center;gap:5px;
+    border-right:none;border-bottom:1px solid var(--line);padding:10px 14px}
+  .rail-grp,.rail-foot{display:none}
+  .verbs button svg{display:none}
+  .verbs button,.plaque{width:auto;padding:6px 14px;font-size:13px}
+  .window{padding:14px 14px 88px}
+  section{padding:0 8px 22px}
+  .formgrid{grid-template-columns:1fr}
+  .marquee{height:auto;flex-wrap:wrap;padding:8px 14px;gap:10px 16px}
+  .mq-right{display:none}
+  .hide-narrow{display:none}
+  .gridwrap{overflow-x:auto}
+  table.grid{min-width:640px}
+  .echo{padding:0 14px}
+  .echo .tail{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="marquee">
+  <b class="brand"><img src="logo.png" alt="">My TV 后台管理</b>
+  <span class="mq-cell" id="sys-activate"><i class="lamp idle"></i>激活端点 …</span>
+  <span class="mq-cell" id="sys-hu"><i class="lamp idle"></i>热更端点 …</span>
+  <span class="blackout hide-narrow" id="sys-blackout">BLACKOUT: …</span>
+  <span class="mq-right hide-narrow">云端 Edge · D1 数据库 + R2 对象存储 · 登录会话 12h</span>
+</header>
+
+<div class="stage">
+<nav class="rail verbs">
+  <div class="rail-grp">营业</div>
+  <button data-tab="overview" class="on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>总览</button>
+  <button data-tab="licenses"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.25" cy="5.25" r="3.25"/><path d="M7.6 7.6 13.75 13.75M11 11l1.6-1.6"/></svg>卡密<span class="n" id="pn-licenses"></span></button>
+  <button data-tab="logs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="1.75" width="10" height="12.5" rx="1.5"/><path d="M5.75 5h4.5M5.75 8h4.5M5.75 11h2.5"/></svg>激活日志</button>
+  <button data-tab="gen"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M8 5.5v5M5.5 8h5"/></svg>补货</button>
+  <div class="rail-grp">发布</div>
+  <button data-tab="hu"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 11V5.5M5.5 8 8 5.5 10.5 8"/></svg>热更新</button>
+  <button data-tab="ann"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.75 6.25v3.5h2.4l4.1 3.1V3.15l-4.1 3.1z"/><path d="M11.75 5.75a3.6 3.6 0 0 1 0 4.5"/></svg>公告</button>
+  <div class="rail-grp">渠道</div>
+  <button data-tab="iptv"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.5"/><path d="M8 11.25V13.5M5.5 13.5h5"/></svg>电视源</button>
+  <button data-tab="vod-sources"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5h12v8H2z"/><path d="m6.5 7 3 1.5-3 1.5zM5 2.5l3 2 3-2"/></svg>影视源</button>
+  <div class="rail-foot" id="verbs-note">私钥签发 · 云端密钥<br>登录会话 12h</div>
+</nav>
+
+<main class="window">
+
+<!-- ============ 总览 ============ -->
+<section id="tab-overview">
+  <div class="w-head"><h1>数据概览</h1><span class="sub">库存与端点总览 · 最近操作过的卡密在上</span></div>
+  <div class="kpis" id="plans-cards">
+    <div class="cell"><b id="k-total">—</b><span>卡密总数</span></div>
+    <div class="cell"><b id="k-unsold">—</b><span>未售库存</span></div>
+    <div class="cell"><b id="k-sold">0</b><span>已售未绑</span></div>
+    <div class="cell"><b id="k-banned">0</b><span>已封禁</span></div>
+    <div class="cell"><b id="kpi-hu" class="amber">…</b><span>热更</span></div>
+    <div class="cell"><b id="kpi-husize">—</b><span>桶占用</span></div>
+  </div>
+  <div class="gridwrap" id="ov-ledger" aria-label="最近卡密"></div>
+  <div class="panel">
+    <div class="secthead"><h2>通道状态</h2><span class="sub" id="health-sub">探测中</span><span class="spring"></span><button class="ghost mini" id="btn-rehealth" onclick="loadHealth()">重测</button></div>
+    <div id="health-card"></div>
+  </div>
+</section>
+
+<!-- ============ 卡密 ============ -->
+<section id="tab-licenses" style="display:none">
+  <div class="w-head"><h1>卡密管理</h1><span class="sub">按码或套餐筛选 · 行内直接封禁 / 解绑 / 标记出售</span></div>
+  <div class="toolbar">
+    <input id="q" class="mono" placeholder="按码搜索（支持片段）" size="24">
+    <select id="f-plan">
+      <option value="">全部套餐</option><option value="monthly">月卡</option>
+      <option value="quarterly">季卡</option><option value="yearly">年卡</option><option value="lifetime">终身</option>
+      <option value="weekly">周卡</option>
+    </select>
+    <select id="f-status">
+      <option value="">全部状态</option><option value="active">已激活</option><option value="redeemed">已用于续费</option><option value="sold">已售未绑定</option><option value="unsold">未售库存</option><option value="banned">已封禁</option>
+    </select>
+    <button class="act" id="btn-search">查询</button>
+    <span class="hint" id="lic-total"></span>
+  </div>
+  <div class="gridwrap" id="lic-table"></div>
+  <div class="pager">
+    <button class="ghost mini" id="prev">← 上一页</button>
+    <span id="page-info"></span>
+    <button class="ghost mini" id="next">下一页 →</button>
+  </div>
+</section>
+
+<!-- ============ 激活日志 ============ -->
+<section id="tab-logs" style="display:none">
+  <div class="w-head"><h1>激活流水</h1><span class="sub">最新 100 条（可到 500）· 含启动复验 rebind</span></div>
+  <div class="toolbar">
+    <input id="log-q" class="mono" placeholder="按码过滤" size="24">
+    <button class="act" id="btn-logs">查询</button>
+  </div>
+  <div class="gridwrap" id="log-table"></div>
+</section>
+
+<!-- ============ 补货 ============ -->
+<section id="tab-gen" style="display:none">
+  <div class="w-head"><h1>签发补货</h1><span class="sub">私钥签发 → 自动入库 → 生成 cards.csv</span></div>
+  <div class="formgrid" style="max-width:820px">
+    <label class="f">套餐
+      <select id="g-plan">
+        <option value="monthly">月卡（¥9.9）</option><option value="quarterly">季卡（¥29.9）</option>
+        <option value="yearly">年卡（¥99.9）</option><option value="lifetime">终身（¥128）</option>
+        <option value="weekly">周卡（7天）</option>
+      </select>
+    </label>
+    <label class="f">数量（1–500）<input id="g-count" class="mono" type="number" value="50" min="1" max="500"></label>
+    <label class="f">批次备注<input id="g-note" placeholder="如：第二批"></label>
+    <div class="wide formfoot" style="border-top:1px solid var(--edge);border:none;padding:0;margin-top:2px;background:none">
+      <button class="act" id="btn-gen">生成并入库</button>
+      <span class="hint">私钥签名 · 直接写入新库</span>
+    </div>
+  </div>
+  <div class="errbox" id="gen-err"></div>
+  <div class="okbox" id="gen-ok"></div>
+</section>
+
+<!-- ============ 热更新 ============ -->
+<section id="tab-hu" style="display:none">
+  <div class="w-head"><h1>发布热更</h1><span class="sub">对象 = 内嵌后端 zip（build_backend_zip.py 产物）· 公测版设备下次启动生效</span></div>
+  <div class="formgrid" style="max-width:1100px">
+    <label class="f">zip 文件（手动选择）<input type="file" id="hu-file" accept=".zip" style="padding:5px">
+      <span id="hu-fileinfo" style="letter-spacing:0;font-family:var(--mono);color:var(--faint)"></span></label>
+    <label class="f">展示名<input id="hu-name" placeholder="如 1.18-fix1"></label>
+    <label class="f">发布方式
+      <select id="hu-status"><option value="published">立即发布</option><option value="scheduled">定时发布</option><option value="offline">仅上传（下线态）</option></select></label>
+    <label class="f" id="hu-publish-at-row" style="display:none">定时发布时间（到点自动对客户端生效，无需保持页面打开）
+      <input id="hu-publish-at" class="mono" type="datetime-local" step="60"></label>
+    <label class="f">强制更新
+      <span class="inline" style="align-items:center;color:var(--paper);white-space:nowrap"><input type="checkbox" id="hu-force"> <span style="font-size:12px">阻断设备直至更新完成并自动重启</span></span></label>
+    <label class="f wide">更新说明<input id="hu-notes" placeholder="用户不可见，运维记录"></label>
+  </div>
+  <div class="formfoot">
+    <button class="act" id="btn-hu-latest">上传最新版本</button>
+    <button class="ghost" id="btn-hu-upload">上传所选文件</button>
+    <button class="ghost mini" id="btn-hu-dir" style="display:none">更换目录</button>
+    <span class="hint" id="hu-dir-hint">…</span>
+  </div>
+  <div class="errbox" id="hu-err"></div>
+  <div class="okbox" id="hu-ok"></div>
+
+  <div class="panel">
+    <div class="secthead"><h2>包列表</h2><span class="spring"></span><button class="ghost mini" id="btn-hu-refresh">刷新</button></div>
+    <div class="gridwrap" id="hu-table"></div>
+  </div>
+
+  <div class="panel">
+    <div class="secthead"><h2>设备上报日志</h2><span class="sub">最新 100 条</span><span class="spring"></span><button class="ghost mini" id="btn-hulogs-refresh">刷新</button></div>
+    <div class="gridwrap" id="hulog-table"></div>
+  </div>
+</section>
+
+<!-- ============ 公告 ============ -->
+<section id="tab-ann" style="display:none">
+  <div class="w-head"><h1>运营公告</h1><span class="sub">推送至 app 顶部悬浮窗 · 用户关闭后同一条不再弹，发新公告（id 变化）会再弹</span></div>
+  <div class="panel">
+    <div class="secthead"><h2>发布新公告</h2><span class="sub">标题必填；正文在 app 内悬浮窗两行截断显示</span></div>
+    <div class="ann-form">
+      <div class="ann-field">
+        <div class="ann-label"><span>标题</span><span class="ann-count" id="ann-title-ct">0 / 60</span></div>
+        <input id="ann-title" maxlength="60" placeholder="如：服务器维护通知">
+      </div>
+      <div class="ann-field">
+        <div class="ann-label"><span>正文（可选）</span><span class="ann-count" id="ann-content-ct">0 / 600</span></div>
+        <textarea id="ann-content" rows="5" maxlength="600" style="resize:vertical" placeholder="app 顶部悬浮窗展示的正文，两行截断"></textarea>
+      </div>
+      <div class="ann-actions">
+        <button class="act" id="btn-ann-publish">发布公告</button>
+        <button class="ghost" id="btn-ann-offline">下线当前公告</button>
+        <span class="hint">发布即生效：app 下次轮询（≤10 分钟）内拉到</span>
+      </div>
+    </div>
+    <div class="errbox" id="ann-err"></div>
+    <div class="okbox" id="ann-ok"></div>
+  </div>
+  <div class="panel">
+    <div class="secthead"><h2>当前生效公告</h2><span class="sub" id="ann-sub">加载中</span><span class="spring"></span><button class="ghost mini" id="btn-ann-refresh">刷新</button></div>
+    <div class="gridwrap" id="ann-view"></div>
+  </div>
+</section>
+
+<!-- ============ 电视源（v1.20 后台#8；2026-09-05 工作流重构 + 台标上传） ============ -->
+<section id="tab-iptv" style="display:none">
+  <div class="w-head"><h1>电视源</h1><span class="sub">改动先入库草稿，点「发布」后才对客户端生效（≤30 分钟自动拉取）</span></div>
+  <div class="kpis" id="iptv-kpis"></div>
+
+  <!-- 工作流导航条：按序号走完即一次完整的源变更 -->
+  <div class="panel" style="padding:10px 16px">
+    <div style="display:flex;align-items:stretch;gap:8px;flex-wrap:wrap">
+      <div onclick="gotoPanel('iptv-panel-import')" style="flex:1;min-width:170px;cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:10px 14px;background:var(--panel2,transparent)">
+        <b style="color:var(--accent)">① 导入</b><div class="dim" style="font-size:11px;margin-top:3px">上游 M3U / API 同步 → 入库草稿</div></div>
+      <div style="align-self:center;color:var(--faint)">→</div>
+      <div onclick="gotoPanel('iptv-panel-ch')" style="flex:1;min-width:170px;cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:10px 14px">
+        <b style="color:var(--accent)">② 编排</b><div class="dim" style="font-size:11px;margin-top:3px">频道 · 线路 · 台标 · 启停 · 排序</div></div>
+      <div style="align-self:center;color:var(--faint)">→</div>
+      <div onclick="gotoPanel('iptv-panel-pub')" style="flex:1;min-width:170px;cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:10px 14px">
+        <b style="color:var(--accent)">③ 发布</b><div class="dim" style="font-size:11px;margin-top:3px">启用频道 → m3u → 客户端生效</div></div>
+      <div style="align-self:center;color:var(--faint)">→</div>
+      <div onclick="gotoPanel('iptv-panel-ver')" style="flex:1;min-width:170px;cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:10px 14px">
+        <b style="color:var(--accent)">④ 回滚</b><div class="dim" style="font-size:11px;margin-top:3px">版本历史一键切回旧版</div></div>
+    </div>
+  </div>
+
+  <!-- ① 导入 -->
+  <div class="panel" id="iptv-panel-import">
+    <div class="secthead"><h2>① 导入 / API 同步</h2><span class="sub">只是入库草稿，不会立即影响客户端；导完到 ② 检查，再 ③ 发布</span></div>
+    <div class="formgrid" style="max-width:1100px">
+      <label class="f">M3U 文件<input type="file" id="iptv-file" accept=".m3u,.txt" style="padding:5px"></label>
+      <label class="f">导入模式
+        <select id="iptv-import-mode"><option value="merge">合并（同名频道补线路）</option><option value="replace">替换（清空后全量导入）</option></select></label>
+      <label class="f wide">或上游 URL<input id="iptv-url" class="mono" placeholder="https://…/xxx.m3u（仅 https 公网）"></label>
+    </div>
+    <details class="fold">
+      <summary>或粘贴 M3U 文本（与文件 / URL 三选一，低频）</summary>
+      <div class="inner"><textarea id="iptv-text" rows="4" style="resize:vertical;font-family:var(--mono);font-size:12px;width:100%" placeholder="#EXTM3U&#10;#EXTINF:-1 group-title=&quot;央视&quot;,CCTV-1&#10;https://…/.m3u8"></textarea></div>
+    </details>
+    <div class="formfoot">
+      <button class="act" id="btn-iptv-import">导入</button>
+      <button class="ghost" id="btn-iptv-sync" onclick="iptvSync()">API 同步（Guovin / vbskycn 上游）</button>
+      <span class="hint">API 同步 = 拉每日校验源入库（与云函数同源上游），审核后发布</span>
+    </div>
+    <div class="errbox" id="iptv-imp-err"></div>
+    <div class="okbox" id="iptv-imp-ok"></div>
+  </div>
+
+  <!-- ② 编排（主工作区） -->
+  <div class="panel" id="iptv-panel-ch">
+    <div class="secthead"><h2>② 频道与线路</h2><span class="sub" id="iptv-ch-sub">加载中 · 改动只存草稿，发布后生效</span><span class="spring"></span>
+      <button class="ghost mini" onclick="iptvEditOpen(null)">＋ 新增频道</button>
+      <button class="ghost mini" onclick="loadIptv()">刷新</button></div>
+    <div class="toolbar">
+      <input id="iptv-q" class="mono" placeholder="按频道名/分组过滤" size="20">
+      <select id="iptv-f-group"><option value="">全部分组</option></select>
+      <select id="iptv-f-st"><option value="">全部状态</option><option value="on">启用</option><option value="off">停用</option></select>
+      <button class="ghost mini batch-btn" onclick="iptvBatch('enable')" disabled>批量启用</button>
+      <button class="ghost mini batch-btn" onclick="iptvBatch('disable')" disabled>批量停用</button>
+      <button class="ghost mini batch-btn" style="color:var(--bad)" onclick="iptvBatch('delete')" disabled>批量删除</button>
+      <span class="hint">表头勾选框 = 全选当前筛选；↑↓ 调组内顺序（小在前，影响发布产物顺序）</span>
+    </div>
+    <div class="gridwrap" id="iptv-table"></div>
+  </div>
+
+  <!-- ②+ 频道分组管理（2026-09-05 需求③） -->
+  <div class="panel" id="iptv-panel-group">
+    <div class="secthead"><h2>频道分组管理</h2><span class="sub">分组 = 客户端侧栏一级菜单；可新建空分组占位，频道在 ② 编辑里指到该分组</span><span class="spring"></span>
+      <button class="ghost mini" onclick="iptvGroupLoad()">刷新</button></div>
+    <div class="toolbar">
+      <input id="iptv-g-new" placeholder="新分组名（≤24 字）" size="16">
+      <button class="ghost mini" onclick="iptvGroupCreate()">＋ 新建分组</button>
+      <span class="hint">↑↓ 调分组顺序（影响客户端侧栏顺序）· 删除分组时其频道移入指定分组（默认「未分组」）</span>
+    </div>
+    <div class="gridwrap" id="iptv-group-table"></div>
+  </div>
+
+  <!-- ③ 发布 -->
+  <div class="panel" id="iptv-panel-pub">
+    <div class="secthead"><h2>③ 发布新版本</h2><span class="sub">启用中的频道 → m3u → 公开桶 latest（客户端 ≤30 分钟自动拉取）</span></div>
+    <div class="formgrid" style="max-width:820px">
+      <label class="f wide">版本说明<input id="iptv-notes" placeholder="如：新增港澳台分组"></label>
+    </div>
+    <div class="formfoot">
+      <button class="act" id="btn-iptv-publish">发布并生效</button>
+      <span class="hint">发布即切托管模式（暂停每日自动推流，防次晨覆盖）</span>
+    </div>
+    <div class="errbox" id="iptv-pub-err"></div>
+    <div class="okbox" id="iptv-pub-ok"></div>
+  </div>
+
+  <!-- ④ 版本与回滚 -->
+  <div class="panel" id="iptv-panel-ver">
+    <div class="secthead"><h2>④ 版本历史与回滚</h2><span class="sub">每个发布版本归档为 iptv/iptv-v{n}.m3u，可随时切回</span><span class="spring"></span><button class="ghost mini" id="btn-iptv-versions">刷新</button></div>
+    <div class="gridwrap" id="iptv-ver-table"></div>
+  </div>
+
+  <!-- 运行模式（状态说明，非工作流步骤） -->
+  <div class="panel" id="iptv-panel-mode">
+    <div class="secthead"><h2>运行模式</h2><span class="sub" id="iptv-mode-sub">读取中</span><span class="spring"></span>
+      <button class="ghost mini" onclick="iptvSetMode('manual')">切托管模式</button>
+      <button class="ghost mini" onclick="iptvSetMode('auto')">切自动模式</button>
+      <button class="act mini" onclick="iptvAutoRun()">⟳ 立即自动重建（找源 + 测活 + 推送）</button>
+      <button class="ghost mini" onclick="iptvProbe()">探测线上 latest</button></div>
+    <div class="gridwrap" id="iptv-mode-card"></div>
+  </div>
+
+  <details class="fold">
+    <summary>操作日志 · 导入/发布/回滚/模式切换审计</summary>
+    <div class="inner">
+      <div class="toolbar">
+        <button class="ghost mini" id="btn-iptv-logs">刷新</button>
+        <button class="ghost mini" onclick="iptvExportLogs()">导出 CSV</button>
+      </div>
+      <div class="gridwrap" id="iptv-log-table"></div>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 影视播放源 ============ -->
+<section id="tab-vod-sources" style="display:none">
+  <div class="w-head">
+    <h1>影视源管理</h1><span class="sub">编辑内容保存为草稿，不会自动影响客户端</span><span class="spring"></span>
+    <button class="act" id="btn-vod-source-publish" onclick="vodSourcePublish()">立即推送</button>
+  </div>
+  <div class="formfoot" style="margin-bottom:18px">
+    <span class="tag warn" id="vod-source-draft-state">未发布变更</span>
+    <span class="hint" id="vod-source-version">加载版本信息…</span>
+  </div>
+  <div class="panel">
+    <div class="secthead"><h2>从网站新增</h2><span class="sub">输入影视网站首页，自动识别 MacCMS JSON/XML 接口</span></div>
+    <div class="toolbar">
+      <input id="vod-source-site-input" class="mono" style="min-width:360px" placeholder="https://example.com">
+      <button class="act" onclick="vodSourceDiscover()">识别并新增</button>
+      <button class="ghost" onclick="vodSourceEdit(null)">手动新增</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="secthead"><h2>源列表</h2><span class="sub">当前项目源按配置顺序显示</span><span class="spring"></span><button class="ghost mini" onclick="loadVodSources()">刷新</button></div>
+    <div class="gridwrap" id="vod-source-table"></div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ 右：运行状态栏（常驻） ============ -->
+<aside class="board">
+  <h3>运行状态</h3>
+  <div class="big"><div class="l">未售库存</div><div class="v" id="bd-stock">—</div></div>
+  <div class="b-sect">待办</div>
+  <div class="b-row">已售未绑 <b id="bd-sold">—</b></div>
+  <div class="b-row">已封禁 <b id="bd-ban">—</b></div>
+  <div class="b-sect">端点</div>
+  <div class="b-row">激活端点 <b id="bd-act-v">…</b><i class="lamp idle" id="bd-act-l"></i></div>
+  <div class="b-row">热更端点 <b id="bd-hu-v">…</b><i class="lamp idle" id="bd-hu-l"></i></div>
+  <div class="b-row">紧急停更 <b id="bd-bo-v">…</b><i class="lamp idle" id="bd-bo-l"></i></div>
+  <div class="b-sect">发布</div>
+  <div class="b-row">热更版本 <b id="bd-huver">—</b></div>
+</aside>
+</div>
+
+<!-- ============ 登录门禁浮层（v1.20：云端外网访问） ============ -->
+<div id="login-veil" class="veil" style="display:none">
+  <form id="login-form" class="veil-panel">
+    <div class="veil-brand"><img src="logo.png" alt="">My TV 后台管理</div>
+    <label class="f">账号<input id="login-user" autocomplete="username" autofocus></label>
+    <div style="height:12px"></div>
+    <label class="f">密码<input id="login-pass" type="password" autocomplete="current-password"></label>
+    <div id="login-err" style="color:var(--bad);font-size:12px;margin-top:10px;display:none"></div>
+    <div style="display:flex;align-items:center;margin-top:18px">
+      <button class="act" type="submit" style="width:100%">登录</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ 电视源编辑浮层 ============ -->
+<div id="iptv-edit-veil" class="veil" style="display:none;z-index:8" onclick="if(event.target===this)iptvEditClose()">
+  <div class="veil-panel wide">
+    <div class="veil-head">
+      <h2 id="iptv-edit-title">新增频道</h2>
+      <span class="sub">保存仅入库，发布后才对客户端生效</span>
+    </div>
+    <div class="formgrid" style="grid-template-columns:1fr 1fr;padding:0 0 12px;border:none;background:none;margin:0">
+      <label class="f">频道名（必填）<input id="ie-name" placeholder="如 CCTV-1"></label>
+      <label class="f">分组（必填）<input id="ie-group" list="iptv-groups" placeholder="央视/卫视/体育/地方/数字付费/港澳台/美国/英国">
+        <datalist id="iptv-groups"></datalist></label>
+      <div class="f" style="grid-column:1/-1">台标（可选；客户端内置台标优先，此处为兜底显示）
+        <div style="display:flex;gap:14px;align-items:flex-start;margin-top:6px">
+          <img id="ie-logo-prev" alt="" style="width:56px;height:56px;object-fit:contain;background:#0a0c10;
+            border:1px solid var(--line);border-radius:8px;padding:4px;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <input id="ie-logo" class="mono" style="width:100%" placeholder="https://…（可留空）" oninput="iptvLogoPreview()">
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+              <button type="button" class="ghost mini" onclick="document.getElementById('ie-logo-file').click()">上传图片</button>
+              <input type="file" id="ie-logo-file" accept=".png,.jpg,.jpeg,.webp" style="display:none;padding:0">
+              <span class="hint" id="ie-logo-st">PNG / JPG / WEBP ≤2MB，上传后自动填入</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <label class="f">组内排序（小在前）<input id="ie-sort" class="mono" type="number" value="0" min="0"></label>
+      <label class="f" style="grid-column:1/-1">备注<input id="ie-note" placeholder="可选"></label>
+      <label class="f" style="grid-column:1/-1">线路（每行一条 URL，首行为主线路）<textarea id="ie-lines" rows="6" class="mono" style="resize:vertical;font-size:12px" placeholder="https://…/cctv1.m3u8&#10;https://…/backup.m3u8"></textarea></label>
+      <label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="ie-enabled" checked> 启用（进发布产物）</label>
+    </div>
+    <div class="formfoot" style="border:none;background:none;padding:12px 0 0">
+      <button class="act" onclick="iptvSave()">保存</button>
+      <button class="ghost" onclick="iptvEditClose()">取消</button>
+      <span class="hint" id="iptv-edit-err" style="color:var(--bad);font-size:12px"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 电视源试播浮层（v1.22）：播放经网页版 /api/relay 中继 ============
+     http 线路在 https 页面属混合内容（浏览器直拦），中继 https 化后一律可取流；
+     云端后台走同源 /web 中继，本地后台走云端中继（跨源响应带 CORS 全开）。 -->
+<div id="iptv-play-veil" class="veil" style="display:none" onclick="if(event.target===this)iptvPlayClose()">
+  <div class="veil-panel play">
+    <div class="veil-head">
+      <h2 id="ip-title">播放</h2>
+      <span class="sub" id="ip-line"></span>
+      <span class="ops">
+        <button class="ghost mini" onclick="iptvPlaySwitch(-1)">‹ 上一线</button>
+        <button class="ghost mini" onclick="iptvPlaySwitch(1)">下一线 ›</button>
+        <button class="ghost mini" onclick="iptvPlayClose()">✕ 关闭</button>
+      </span>
+    </div>
+    <video id="ip-video" controls autoplay playsinline style="display:block;width:100%;aspect-ratio:16/9;background:#000;outline:none"></video>
+    <div class="errbox" id="ip-err" style="display:none;margin-top:10px"></div>
+    <div id="ip-url" style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--faint);word-break:break-all"></div>
+  </div>
+</div>
+
+<!-- ============ 影视源编辑浮层 ============ -->
+<div id="vod-source-edit-veil" class="veil" style="display:none;z-index:9" onclick="if(event.target===this)vodSourceEditClose()">
+  <div class="veil-panel wide">
+    <div class="veil-head"><h2 id="vod-source-edit-title">新增影视源</h2><span class="sub">保存到草稿，点“立即推送”后客户端才会更新</span></div>
+    <div class="formgrid" style="padding:0;border:none;background:none">
+      <label class="f">名称<input id="vse-name" placeholder="如 暴风"></label>
+      <label class="f">适配器<select id="vse-adapter"><option value="macms_json">MacCMS JSON</option><option value="macms_xml">MacCMS XML</option><option value="hhkan">好好看</option></select></label>
+      <label class="f wide">网站地址<input id="vse-site" class="mono" placeholder="https://example.com"></label>
+      <label class="f wide">接口地址<input id="vse-api" class="mono" placeholder="https://example.com/api.php/provide/vod/"></label>
+      <label class="f">排序<input id="vse-sort" type="number" value="0" min="0"></label>
+      <label class="f" style="flex-direction:row;align-items:center"><input id="vse-enabled" type="checkbox" checked> 启用</label>
+    </div>
+    <div class="formfoot" style="border:none;background:none;padding-left:0"><button class="act" onclick="vodSourceSave()">保存</button><button class="ghost" onclick="vodSourceEditClose()">取消</button><span class="hint" id="vod-source-edit-error" style="color:var(--bad)"></span></div>
+  </div>
+</div>
+
+<!-- ============ 影视源指定影片测试与试看浮层 ============ -->
+<div id="vod-source-test-veil" class="veil" style="display:none;z-index:10" onclick="if(event.target===this)vodSourceTestClose()">
+  <div class="veil-panel play">
+    <div class="veil-head"><h2 id="vod-source-test-title">测试影视源</h2><span class="sub">只测试当前源，不修改也不发布配置</span></div>
+    <div class="toolbar">
+      <input id="vst-title" placeholder="指定影片名称" style="min-width:230px">
+      <input id="vst-year" placeholder="年份（可选）" size="10">
+      <input id="vst-episode" type="number" value="1" min="1" placeholder="集数" style="width:90px">
+      <button class="act" id="btn-vod-source-test-run" onclick="vodSourceTestRun()">开始测试</button>
+      <button class="ghost" onclick="vodSourceTestClose()">关闭</button>
+    </div>
+    <div id="vod-source-test-result" class="empty">输入片名后开始测试。</div>
+    <video id="vod-source-preview" controls playsinline style="display:none;width:100%;aspect-ratio:16/9;background:#000;margin-top:12px"></video>
+  </div>
+</div>
+
+</div><!-- /stage -->
+
+<footer class="echo" id="toast"><span class="rc-stamp" id="echo-stamp">✓</span><time id="echo-time"></time><span class="msg" id="echo-msg">会话就绪 · 管理端已连接</span><span class="tail" id="echo-tail">数据自持 · 不依赖第三方数据库网关</span></footer>
+
+<script>
+/* ---- 登录门禁（v1.20）：whoami 探测 → 未登录弹浮层；api 统一 Cookie 会话 ---- */
+const PLAN = {monthly:"月卡", quarterly:"季卡", yearly:"年卡", lifetime:"终身", weekly:"周卡"};
+const RESULT = {ok:"激活成功", rebind:"重复激活", bound_full:"设备数已满", not_found:"码不存在",
+                banned:"已封禁", unbind:"后台解绑", admin_active:"后台解封", admin_banned:"后台封禁",
+                admin_sold:"后台标记出售", admin_unsold:"后台取消出售", bad_param:"参数错误"};
+const HU_RESULT = {downloaded:"已下载", applied:"已生效", failed:"失败", apply_failed:"启动失败隔离", probe:"探测"};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtT = s => s ? new Date(s).toLocaleString("sv-SE").slice(5,16) : "";
+const nowT = () => new Date().toTimeString().slice(0, 8);
+let page = 0; const PAGE = 50;
+
+/* ---- 表格排序：卡密双表走服务端排序（配合分页），日志/热更表客户端排序 ---- */
+const sortState = {
+  ov:    {key: "updated_at", dir: "desc"},   // 默认 = 最近操作过的卡密在上
+  lic:   {key: "updated_at", dir: "desc"},
+  log:   {key: "at", dir: "desc"},
+  hu:    {key: "hot_version_code", dir: "desc"},
+  hulog: {key: "created_at", dir: "desc"}
+};
+function thSort(stateId, key, label) {
+  if (!key) return `<th>${label}</th>`;
+  const st = sortState[stateId], on = st.key === key;
+  return `<th class="s" title="点击排序" onclick="flipSort('${stateId}','${key}')">${label}${on ? (st.dir === "asc" ? " ▲" : " ▼") : ""}</th>`;
+}
+function flipSort(stateId, key) {
+  const st = sortState[stateId];
+  st.dir = (st.key === key && st.dir === "desc") ? "asc" : "desc";
+  st.key = key;
+  ({ov: loadOvLedger,
+    lic: () => { page = 0; loadList(); },
+    log: renderLogs,
+    hu: renderHuList,
+    hulog: renderHuLogs})[stateId]();
+}
+function cmpBy(key, dir) {
+  return (a, b) => {
+    const va = a[key] ?? "", vb = b[key] ?? "";
+    let c;
+    if (va !== "" && vb !== "" && !isNaN(+va) && !isNaN(+vb)) c = (+va > +vb ? 1 : +va < +vb ? -1 : 0);
+    else c = String(va).localeCompare(String(vb), "zh");
+    return dir === "asc" ? c : -c;
+  };
+}
+/* 行级脉冲：按行签名 diff，仅新增/变更行做一次性强调色脉冲 */
+const _sig = {};
+function pulseDiff(containerId, key, sigs) {
+  const prev = _sig[key] || {}; const cur = {};
+  document.querySelectorAll("#" + containerId + " tr[data-key]").forEach(tr => {
+    const k = tr.dataset.key, s = sigs[k];
+    cur[k] = s;
+    if (prev[k] !== undefined && prev[k] !== s) tr.classList.add("pulse");
+  });
+  _sig[key] = cur;
+}
+function skel(rows) { return `<div class="sk">${"<i></i>".repeat(rows || 4)}</div>`; }
+/* 签名：数字变化 = 可见物理事件。仅值变化时翻牌淡入（260ms），常驻单元格不重复动画 */
+function setNum(id, v) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const t = String(v);
+  if (el.textContent === t) return;
+  el.textContent = t;
+  el.classList.remove("flip"); void el.offsetWidth; el.classList.add("flip");
+  setTimeout(() => el.classList.remove("flip"), 320);
+}
+
+/* ---- 底部状态条（toast 重实现：常驻 + 新消息 punch，sessionStorage 持久） ---- */
+function toast(msg, err) {
+  const box = document.getElementById("toast");
+  const t = document.getElementById("echo-msg");
+  t.className = "msg";
+  t.textContent = (err ? "✕ " : "✓ ") + msg;
+  document.getElementById("echo-time").textContent = nowT();
+  box.classList.toggle("err", !!err);
+  document.getElementById("echo-stamp").textContent = err ? "✕" : "✓";
+  void box.offsetWidth; box.classList.add("flash");
+  setTimeout(() => box.classList.remove("flash"), 320);
+  try { sessionStorage.setItem("otv-echo", JSON.stringify({t: nowT(), m: t.textContent, c: err ? "err" : "ok"})); } catch (e) {}
+}
+(function replayEcho() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem("otv-echo") || "null");
+    if (s) {
+      document.getElementById("echo-time").textContent = s.t;
+      const t = document.getElementById("echo-msg");
+      t.textContent = s.m;
+      document.getElementById("toast").classList.toggle("err", s.c === "err");
+      document.getElementById("echo-stamp").textContent = s.c === "err" ? "✕" : "✓";
+    }
+  } catch (e) {}
+})();
+
+/* v1.21 部署前缀自适应：本地形态页面在根路径（API_BASE="/"）；云端经网关 /admin
+   子路径转发（API_BASE="/admin/"）。此前写死绝对路径 /api/...，云端请求会落到
+   网关根 404（表象=登录失败/端点异常）。页面须带尾斜杠访问（/admin/）。 */
+const API_BASE = (location.pathname.endsWith("/") ? location.pathname
+                  : location.pathname + "/").replace(/[^/]*$/, "") || "/";
+
+async function api(path, body) {
+  try {
+    const r = await fetch(API_BASE + "api/" + path, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      credentials:"same-origin",
+      body: JSON.stringify(body || {})});
+    if (r.status === 401) { showLogin(); return {error: "未登录（请先登录）"}; }
+    return await r.json();
+  } catch (e) { return {error: "管理服务不可达: " + e.message}; }
+}
+function showLogin() {
+  document.getElementById("login-veil").style.display = "";
+  document.getElementById("login-user").focus();
+}
+document.getElementById("login-form").onsubmit = async e => {
+  e.preventDefault();
+  const err = document.getElementById("login-err");
+  err.style.display = "none";
+  try {
+    const r = await fetch(API_BASE + "api/login", {method:"POST",
+      headers:{"Content-Type":"application/json"}, credentials:"same-origin",
+      body: JSON.stringify({user: document.getElementById("login-user").value,
+                            pass: document.getElementById("login-pass").value})});
+    if (r.ok) { location.reload(); return; }
+    const d = await r.json().catch(() => ({}));
+    err.textContent = d.error || "登录失败"; err.style.display = "block";
+  } catch (ex) { err.textContent = "网络异常: " + ex; err.style.display = "block"; }
+};
+fetch(API_BASE + "api/whoami", {credentials:"same-origin"}).then(r => {
+  if (r.status !== 200) showLogin();
+});
+function resultTag(r) {
+  const map = {ok:["ok","ok"], rebind:["","ok"], bound_full:["warn","warn"], not_found:["","warn"],
+               banned:["bad","bad"], unbind:["warn","warn"], admin_active:["ok","ok"], admin_banned:["bad","bad"],
+               admin_sold:["warn","warn"], admin_unsold:["",""]};
+  const [cls] = map[r] || [""];
+  return `<span class="tag ${cls}">${esc(RESULT[r] || r)}</span>`;
+}
+
+/* ---- 总览 ---- */
+async function loadStats() {
+  const d = await api("stats");
+  if (d.error) { if (!/未登录/.test(d.error)) toast("库存加载失败：" + d.error, true); return; }
+  const sum = (k) => d.plans.reduce((a, p) => a + (p[k] || 0), 0);
+  setNum("k-total", sum("total"));
+  setNum("k-unsold", sum("unsold"));
+  setNum("k-sold", sum("sold"));
+  setNum("k-banned", sum("banned"));
+  document.getElementById("k-sold").classList.toggle("amber", !!sum("sold"));
+  document.getElementById("k-banned").classList.toggle("red", !!sum("banned"));
+  /* 运行状态栏镜像（右侧常驻） */
+  setNum("bd-stock", sum("unsold"));
+  setNum("bd-sold", sum("sold"));
+  setNum("bd-ban", sum("banned"));
+  setNum("pn-licenses", sum("total"));
+  loadHuKpi();
+}
+async function loadHuKpi() {
+  const d = await api("hu_list", {limit: 200});
+  if (d.error || !document.getElementById("kpi-hu")) return;
+  const pub = d.rows.filter(r => r.status === "published");
+  const top = pub.length ? pub.reduce((a, b) => a.hot_version_code > b.hot_version_code ? a : b) : null;
+  const size = pub.reduce((a, r) => a + r.file_size, 0);
+  setNum("kpi-hu", top ? "v" + top.hot_version_code : "0");
+  setNum("kpi-husize", size ? huMb(size) : "0");
+  setNum("bd-huver", top ? "v" + top.hot_version_code : "—");
+}
+async function loadHealth() {
+  const a = api("health"), h = api("hu_health");
+  const dA = await a, dH = await h;
+  const sa = document.getElementById("sys-activate");
+  sa.innerHTML = dA.ok
+    ? `<i class="lamp"></i>激活端点 ${dA.latency_ms}ms`
+    : `<i class="lamp err"></i>激活端点异常`;
+  const sh = document.getElementById("sys-hu");
+  sh.innerHTML = dH.ok
+    ? `<i class="lamp"></i>热更端点 ${dH.latency_ms}ms`
+    : `<i class="lamp err"></i>热更端点异常`;
+  const sb = document.getElementById("sys-blackout");
+  sb.textContent = "BLACKOUT: " + (dH.ok ? (dH.blackout ? "ON" : "OFF") : "？");
+  sb.classList.toggle("on", !!(dH.ok && dH.blackout));
+  /* 状态栏端点行镜像（翻牌 + 灯） */
+  setNum("bd-act-v", dA.ok ? dA.latency_ms + "ms" : "异常");
+  document.getElementById("bd-act-l").className = "lamp" + (dA.ok ? "" : " err");
+  setNum("bd-hu-v", dH.ok ? dH.latency_ms + "ms" : "异常");
+  document.getElementById("bd-hu-l").className = "lamp" + (dH.ok ? "" : " err");
+  setNum("bd-bo-v", dH.ok ? (dH.blackout ? "ON" : "OFF") : "？");
+  document.getElementById("bd-bo-l").className = "lamp" + (dH.ok && dH.blackout ? "" : " idle");
+  const card = document.getElementById("health-card");
+  card.innerHTML = `<table class="grid">
+    <tr><td class="dim" style="width:180px">激活端点</td><td>${dA.ok ? `<span class="st ok">● 在线</span> · ${dA.latency_ms} ms` : `<span class="st bad">✕ 异常</span>${dA.detail ? " · " + esc(dA.detail) : ""} · ${dA.latency_ms} ms`}</td></tr>
+    <tr><td class="dim">热更端点</td><td>${dH.ok ? `<span class="st ok">● 在线</span> · ${dH.latency_ms} ms` + (dH.blackout ? ` · <span class="st warn">BLACKOUT ON（紧急停更中）</span>` : "") : `<span class="st bad">✕ 异常</span>${dH.detail ? " · " + esc(dH.detail) : ""} · ${dH.latency_ms} ms`}</td></tr>
+  </table>`;
+  document.getElementById("health-sub").textContent = "上次探测 " + nowT();
+}
+async function loadOvLedger() {
+  const el = document.getElementById("ov-ledger");
+  el.innerHTML = skel(4);
+  const d = await api("licenses", {limit: 8, offset: 0, sort: sortState.ov.key, dir: sortState.ov.dir});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  if (!d.rows.length) { el.innerHTML = `<div class="empty">还没有卡密——去「补货」页生成第一批。</div>`; return; }
+  el.innerHTML = ledgerTable(d.rows, false, true, "ov");
+  pulseDiff("ov-ledger", "ov", Object.fromEntries(d.rows.map(r => [r.code, r.status + r.devices.length + (r.sold_at || "")])));
+}
+function ledgerTable(rows, withOps, fixed, stateId) {
+  const cols = fixed ? '<colgroup><col style="width:17%"><col style="width:6%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col></colgroup>' : '';
+  return `<table class="grid"${fixed ? ' style="table-layout:fixed"' : ''}>` + cols +
+    `<tr>${thSort(stateId, "code", "卡密")}${thSort(stateId, "plan", "套餐")}${thSort(stateId, "status", "状态")}${thSort(stateId, "activated_at", "首次激活")}${thSort(stateId, "expire_at", "统一到期")}${thSort(stateId, "", "续费去向")}${thSort(stateId, "devices", "已绑设备")}${thSort(stateId, "updated_at", "最近操作")}${withOps ? "<th></th>" : ""}</tr>` +
+    rows.map(r => {
+      const redeemed = !!r.redeemed_at;
+      const status = r.status === "banned" ? '<span class="st bad">✕ 封禁</span>'
+        : redeemed ? '<span class="st warn">↗ 已用于续费</span>'
+        : r.activated_at ? '<span class="st ok">● 已激活</span>'
+        : r.sold_at ? '<span class="st warn">◐ 已售未绑</span>'
+        : '<span class="dim">○ 未售</span>';
+      return `<tr data-key="${esc(r.code)}">
+      <td>${esc(r.code)}</td>
+      <td class="lbl">${PLAN[r.plan] || r.plan}</td>
+      <td>${status}</td>
+      <td>${r.activated_at ? `<span title="首次激活时间">${fmtT(r.activated_at)}</span>` : '<span class="dim">—</span>'}</td>
+      <td>${r.expire_at ? `<span title="两台设备共享此到期时间">${fmtT(r.expire_at)}</span>` : r.activated_at && !redeemed ? '<span class="tag ok">终身</span>' : '<span class="dim">—</span>'}</td>
+      <td>${redeemed ? `<span title="${fmtT(r.redeemed_at)}">续至 <code>${esc(r.redeemed_to || "—")}</code></span>` : '<span class="dim">—</span>'}</td>
+      <td>${r.devices.length ? r.devices.map(dev =>
+          `<span class="chip"><code style="font-size:11px">${esc(dev.slice(0,12))}${dev.length > 12 ? '…' : ''}</code>${redeemed ? '' : `<span class="x" title="解绑此设备" onclick="unbindDev('${esc(r.code)}','${esc(dev)}')">✕</span>`}</span>`).join("")
+        : '<span class="dim">未绑定</span>'}</td>
+      <td title="创建 ${fmtT(r.created_at)}${r.note ? ` · ${esc(r.note)}` : ''}">${fmtT(r.updated_at)}</td>
+      ${withOps ? `<td style="white-space:nowrap">
+        <button class="ghost mini" onclick="copyCode('${esc(r.code)}')">复制</button>
+        ${redeemed ? "" : `${r.status === "banned"
+          ? ` <button class="ghost mini" style="color:var(--ok)" onclick="setStatus('${esc(r.code)}','active')">解封</button>`
+          : ` <button class="ghost mini" style="color:var(--bad)" onclick="setStatus('${esc(r.code)}','banned')">封禁</button>`}
+        ${!r.devices.length && r.status !== "banned"
+          ? (r.sold_at
+              ? ` <button class="ghost mini" onclick="markSold('${esc(r.code)}',false)">取消出售</button>`
+              : ` <button class="ghost mini" style="color:var(--amber)" onclick="markSold('${esc(r.code)}',true)">出售</button>`)
+          : ""}
+        ${r.devices.length ? ` <button class="ghost mini" style="color:var(--amber)" onclick="unbindAll('${esc(r.code)}',${r.devices.length})">解绑全部</button>` : ""}`}
+      </td>` : ""}</tr>`;
+    }).join("") + "</table>";
+}
+
+/* ---- 卡密 ----
+   soft=true（需求⑥ 2026-09-07）：增删改后的刷新不闪骨架屏——旧表保留到新数据
+   到位再一次性替换 + 行级脉冲，避免「整个页面刷新」的观感；筛选/翻页仍走骨架屏。 */
+async function loadList(soft) {
+  const el = document.getElementById("lic-table");
+  if (!soft) el.innerHTML = skel(6);
+  const d = await api("licenses", {q: document.getElementById("q").value.trim(),
+    plan: document.getElementById("f-plan").value, status: document.getElementById("f-status").value,
+    limit: PAGE, offset: page * PAGE,
+    sort: sortState.lic.key, dir: sortState.lic.dir});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  document.getElementById("lic-total").textContent = `共 ${d.total} 条 · 第 ${page + 1} 页`;
+  if (!d.rows.length) { el.innerHTML = `<div class="empty">没有匹配的卡密——调整搜索词或筛选条件再查。</div>`; }
+  else {
+    el.innerHTML = ledgerTable(d.rows, true, false, "lic");
+    pulseDiff("lic-table", "lic", Object.fromEntries(d.rows.map(r => [r.code, r.status + r.devices.length + r.note + (r.sold_at || "")])));
+  }
+  document.getElementById("prev").disabled = page === 0;
+  document.getElementById("next").disabled = (page + 1) * PAGE >= d.total;
+}
+function copyCode(c) { navigator.clipboard.writeText(c); toast("已复制 " + c); }
+async function setStatus(code, status) {
+  if (!confirm((status === "banned" ? "封禁 " : "解封 ") + code + "？")) return;
+  const d = await api("set_status", {code, status});
+  if (d.ok) { toast(status === "banned" ? "已封禁 " + code + "（已激活设备下次联网启动降级）" : "已解封 " + code); loadList(true); loadStats(); }
+  else toast("失败：" + (d.msg || d.error), true);
+}
+async function unbindDev(code, dev) {
+  if (!confirm("解绑设备 " + dev.slice(0, 12) + (dev.length > 12 ? "…" : "") + "？（该设备需重新激活）")) return;
+  const d = await api("unbind", {code, device: dev});
+  if (d.ok) { toast("已解绑 " + code + " 的 1 台设备"); loadList(true); loadStats(); } else toast("失败：" + (d.msg || d.error), true);
+}
+async function unbindAll(code, n) {
+  if (!confirm(`解绑 ${code} 的全部 ${n} 台设备？（用于售后换机，用户需重新激活）`)) return;
+  const d = await api("unbind", {code});
+  if (d.ok) { toast(`已全部解绑 ${code}（${n} 台）`); loadList(true); loadStats(); } else toast("失败：" + (d.msg || d.error), true);
+}
+async function markSold(code, sold) {
+  if (!confirm((sold ? "标记出售 " : "取消出售 ") + code + (sold ? "？（线下已收款，等待用户激活）" : "？（恢复为未售库存）"))) return;
+  const d = await api("mark_sold", {code, sold});
+  if (d.ok) { toast((sold ? "已标记出售 " : "已取消出售 ") + code); loadList(true); loadStats(); }
+  else toast("失败：" + (d.msg || d.error), true);
+}
+
+/* ---- 激活日志 ---- */
+let logRows = [];
+async function loadLogs(soft) {
+  const el = document.getElementById("log-table");
+  if (!soft) el.innerHTML = skel(6);
+  const d = await api("logs", {code: document.getElementById("log-q").value.trim(), limit: 100});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  logRows = d.rows || [];
+  renderLogs();
+  pulseDiff("log-table", "log", Object.fromEntries(logRows.map(r => [r.id ?? (r.at + r.code), r.result])));
+}
+function renderLogs() {
+  const el = document.getElementById("log-table");
+  if (!logRows.length) { el.innerHTML = `<div class="empty">暂无激活记录——用户输码激活后会在这里出现。</div>`; return; }
+  const rows = [...logRows].sort(cmpBy(sortState.log.key, sortState.log.dir));
+  el.innerHTML = `<table class="grid"><tr>${thSort("log", "at", "时间")}${thSort("log", "code", "卡密")}${thSort("log", "result", "结果")}${thSort("log", "device_id", "设备")}${thSort("log", "ip", "IP")}</tr>` +
+    rows.map(r => `<tr data-key="${esc(r.id ?? (r.at + r.code))}">
+      <td class="dim">${fmtT(r.at)}</td>
+      <td>${esc(r.code || "")}</td>
+      <td>${resultTag(r.result)}</td>
+      <td class="dim">${esc(r.device_id || "-")}</td>
+      <td class="dim">${esc(r.ip || "-")}</td></tr>`).join("") + "</table>";
+}
+
+/* ---- 补货 ---- */
+async function gen() {
+  const err = document.getElementById("gen-err"), ok = document.getElementById("gen-ok");
+  err.style.display = ok.style.display = "none";
+  const btn = document.getElementById("btn-gen");
+  btn.disabled = true; btn.textContent = "签发中…（私钥签名 + 入库）";
+  const d = await api("gen", {plan: document.getElementById("g-plan").value,
+    count: +document.getElementById("g-count").value, note: document.getElementById("g-note").value.trim()});
+  btn.disabled = false; btn.textContent = "生成并入库";
+  if (d.error) { err.textContent = d.error; err.style.display = "block"; toast("补货失败：" + d.error.slice(0, 60), true); return; }
+  /* 云端形态没有本机文件系统：服务端直接回传 cards.csv 文本，这里给下载入口 */
+  const csvHref = d.csv_text
+    ? `data:text/csv;charset=utf-8,${encodeURIComponent(d.csv_text)}`
+    : "";
+  ok.innerHTML = `批次 <b>${esc(d.batch)}</b> 已生成并入库（${d.imported} 个）<br>发卡平台导入文件：<code>${esc(d.csv)}</code>`
+    + (csvHref ? ` <a class="ghost mini" download="${esc(d.batch)}-cards.csv" href="${csvHref}">下载 cards.csv</a>` : "");
+  ok.style.display = "block";
+  toast(`批次 ${d.batch} 已入库（${d.imported} 个卡密）`);
+  loadStats();
+}
+
+/* ---- 热更新 ---- */
+function huMb(n) { return (n / 1048576).toFixed(1) + " MB"; }
+async function loadHu() { loadHuList(); loadHuLogs(); }
+let huRows = [];
+async function loadHuList(soft) {
+  const el = document.getElementById("hu-table");
+  if (!soft) el.innerHTML = skel(4);
+  const d = await api("hu_list", {});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  huRows = d.rows || [];
+  if (!huRows.length) { el.innerHTML = `<div class="empty">暂无热更包——点「上传最新版本」直传本地最新 zip，或手动上传 <code>build_backend_zip.py</code> 产出的 python-backend.zip。</div>`; return; }
+  renderHuList();
+  pulseDiff("hu-table", "hu", Object.fromEntries(huRows.map(r => ["" + r.hot_version_code, r.status + (r.publish_at || "") + r.notes])));
+}
+function renderHuList() {
+  const el = document.getElementById("hu-table");
+  if (!huRows.length) return;
+  const rows = [...huRows].sort(cmpBy(sortState.hu.key, sortState.hu.dir));
+  el.innerHTML = `<table class="grid"><tr>${thSort("hu", "hot_version_code", "版本")}${thSort("hu", "hot_version_name", "展示名")}${thSort("hu", "file_size", "大小")}${thSort("hu", "sha256", "SHA-256")}${thSort("hu", "status", "状态")}${thSort("hu", "", "说明")}${thSort("hu", "created_at", "时间")}${thSort("hu", "", "")}</tr>` +
+    rows.map(r => `<tr data-key="hu${r.hot_version_code}">
+      <td><b>v${r.hot_version_code}</b></td>
+      <td class="lbl">${esc(r.hot_version_name || "-")}</td>
+      <td>${huMb(r.file_size)}</td>
+      <td title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td>
+      <td>${r.status === "published" ? '<span class="st ok">● 已发布</span>'
+        : r.status === "scheduled" ? `<span class="st warn">◌ 定时</span> <span class="dim mono">${esc(fmtT(r.publish_at))}</span>`
+        : '<span class="st warn">○ 下线</span>'}
+          ${r.force_apply ? '<span class="tag bad">强制</span>' : ""}</td>
+      <td class="dim lbl">${esc(r.notes || "")}</td>
+      <td class="dim">${fmtT(r.created_at)}</td>
+      <td style="white-space:nowrap">
+        ${r.status === "offline"
+          ? `<button class="ghost mini" style="color:var(--ok)" onclick="huStatus(${r.hot_version_code},'published','上线')">上线</button>`
+          : r.status === "scheduled"
+          ? `<button class="ghost mini" style="color:var(--ok)" onclick="huStatus(${r.hot_version_code},'published','立即发布')">立即发布</button>
+             <button class="ghost mini" onclick="huStatus(${r.hot_version_code},'offline','取消定时')">取消定时</button>`
+          : `<button class="ghost mini" onclick="huStatus(${r.hot_version_code},'offline','下线')">下线</button>`}
+        <button class="ghost mini" style="color:var(--bad)" onclick="huDelete(${r.hot_version_code})">删除</button>
+      </td></tr>`).join("") + "</table>";
+}
+let huLogRows = [];
+async function loadHuLogs() {
+  const el = document.getElementById("hulog-table");
+  el.innerHTML = skel(4);
+  const d = await api("hu_logs", {limit: 100});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  huLogRows = d.rows || [];
+  renderHuLogs();
+  pulseDiff("hulog-table", "hulog", Object.fromEntries(huLogRows.map(r => [r.id, r.result + r.detail])));
+}
+function renderHuLogs() {
+  const el = document.getElementById("hulog-table");
+  if (!huLogRows.length) { el.innerHTML = `<div class="empty">暂无设备上报——发布后公测版设备启动时会在这里打卡。</div>`; return; }
+  const rows = [...huLogRows].sort(cmpBy(sortState.hulog.key, sortState.hulog.dir));
+  el.innerHTML = `<table class="grid"><tr>${thSort("hulog", "created_at", "时间")}${thSort("hulog", "device", "设备")}${thSort("hulog", "apk_version", "APK")}${thSort("hulog", "to_version", "热更版本")}${thSort("hulog", "result", "结果")}${thSort("hulog", "", "详情")}</tr>` +
+    rows.map(r => `<tr data-key="${esc(r.id)}">
+      <td class="dim">${fmtT(r.created_at)}</td>
+      <td>${esc((r.device || "-").slice(0, 16))}…</td>
+      <td class="dim">${r.apk_version ?? "-"}</td>
+      <td>${r.from_version ?? "-"} → <b>${r.to_version ?? "-"}</b></td>
+      <td><span class="tag ${r.result === "failed" || r.result === "apply_failed" ? "bad" : "ok"}">${esc(HU_RESULT[r.result] || r.result)}</span></td>
+      <td class="dim">${esc(r.detail || "")}</td></tr>`).join("") + "</table>";
+}
+async function huStatus(version, status, label) {
+  if (!confirm((label || (status === "published" ? "上线" : "下线")) + " 热更包 v" + version + "？")) return;
+  const d = await api("hu_set_status", {version, status});
+  if (d.ret === 0) { toast("已" + (label || (status === "published" ? "上线" : "下线")) + " v" + version + "（设备下次启动检查到）"); loadHuList(true); }
+  else toast("失败：" + (d.msg || d.error), true);
+}
+async function huDelete(version) {
+  if (!confirm("删除热更包 v" + version + "？（元数据 + 云端 zip 一并删除）")) return;
+  const d = await api("hu_delete", {version});
+  if (d.ret === 0) { toast("已删除 v" + version); loadHuList(true); loadHuKpi(); }
+  else toast("失败：" + (d.msg || d.error), true);
+}
+document.getElementById("hu-file").onchange = e => {
+  const f = e.target.files[0];
+  document.getElementById("hu-fileinfo").textContent = f ? `${f.name} · ${huMb(f.size)}` : "";
+};
+/* 公共上传：版本号与适用 APK 范围由服务端自动分配（version<1 → 最大+1；apk 范围 0–MAX）。
+   2026-09-07 需求④：>4.5MB 走分片链路（网关请求体上限实测 ~6MB，直传 36MB zip 会被
+   网关 406 空响应拒掉——此前「上传失败: SyntaxError: Unexpected end of JSON input」根因）：
+   逐片 POST /api/hu_upload_chunk（4MB/片，暂存 pgstore）→ /api/hu_upload_commit 重组发布 */
+const HU_CHUNK = 4 * 1024 * 1024;
+async function huPostJson(url, opts, body) {
+  const r = await fetch(url, opts);
+  const txt = await r.text();
+  if (!txt) throw new Error(`服务端空响应（HTTP ${r.status}）——网关拒绝或函数超时，请稍后重试`);
+  try { return JSON.parse(txt); } catch (e) { throw new Error(`响应异常（HTTP ${r.status}）: ${txt.slice(0, 80)}`); }
+}
+async function huDoUpload(f, btn) {
+  const err = document.getElementById("hu-err"), ok = document.getElementById("hu-ok");
+  err.style.display = ok.style.display = "none";
+  if (!f) { err.textContent = "请先选择 zip 文件"; err.style.display = "block"; return; }
+  const status = document.getElementById("hu-status").value;
+  let publishAt = "";
+  if (status === "scheduled") {
+    const v = document.getElementById("hu-publish-at").value;
+    if (!v) { err.textContent = "请选择定时发布时间"; err.style.display = "block"; return; }
+    publishAt = new Date(v).toISOString();
+    if (new Date(publishAt) <= new Date()) { err.textContent = "定时发布时间必须晚于当前时间"; err.style.display = "block"; return; }
+  }
+  const oldTxt = btn.textContent;
+  const metaQs = () => new URLSearchParams({name: document.getElementById("hu-name").value.trim(),
+      notes: document.getElementById("hu-notes").value.trim(),
+      force: document.getElementById("hu-force").checked ? "true" : "false",
+      status, publishAt});
+  btn.disabled = true;
+  try {
+    let d;
+    if (f.size > HU_CHUNK + 512 * 1024) {
+      // 分片：uid 客户端生成（云端多实例无会话粘性，状态外置在 pgstore）
+      const uid = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}${Math.random()}`).replace(/-/g, "").slice(0, 16);
+      const total = Math.ceil(f.size / HU_CHUNK);
+      for (let i = 0; i < total; i++) {
+        const part = f.slice(i * HU_CHUNK, Math.min((i + 1) * HU_CHUNK, f.size));
+        btn.textContent = `上传分片 ${i + 1}/${total}（${Math.round((i * HU_CHUNK) / f.size * 100)}%）…`;
+        let lastErr = null;
+        for (let t = 0; t < 3; t++) {
+          try {
+            const cd = await huPostJson(API_BASE + "api/hu_upload_chunk?" + new URLSearchParams({uid, seq: i}),
+              {method: "POST", headers: {"Content-Type": "application/octet-stream"}, credentials: "same-origin", body: part});
+            if (cd.error) throw new Error(cd.error);
+            lastErr = null; break;
+          } catch (e) { lastErr = e; }
+        }
+        if (lastErr) throw new Error(`分片 ${i + 1}/${total} 三次重试仍失败：${lastErr.message}`);
+      }
+      btn.textContent = `校验并发布（${huMb(f.size)}）…`;
+      d = await huPostJson(API_BASE + "api/hu_upload_commit?" + (metaQs().toString() + "&" + new URLSearchParams({uid, total, size: f.size})),
+        {method: "POST", credentials: "same-origin"});
+    } else {
+      btn.textContent = `上传中（${huMb(f.size)}）…`;
+      d = await huPostJson(API_BASE + "api/hu_upload?" + metaQs().toString(), {method: "POST",
+        headers: {"Content-Type": "application/zip"}, credentials: "same-origin", body: f});
+    }
+    if (d.error) { err.textContent = d.error; err.style.display = "block"; toast("发布失败：" + d.error.slice(0, 60), true); return; }
+    const stTxt = status === "published" ? "已发布"
+      : status === "scheduled" ? `已定时（${document.getElementById("hu-publish-at").value.replace("T", " ")} 自动对客户端生效）`
+      : "已上传（下线态）";
+    ok.innerHTML = `热更包 <b>v${d.version}</b> ${stTxt} · 源文件 <code style="font-size:11px">${esc(f.name)}</code><br>` +
+      `大小 ${huMb(d.size)} · SHA-256 <code style="font-size:11px">${esc(d.sha256)}</code>`;
+    ok.style.display = "block";
+    toast(`热更包 v${d.version} ${status === "published" ? "已发布" : status === "scheduled" ? "已定时" : "已上传"}（${huMb(d.size)}）`);
+    loadHuList(true); loadHuKpi();
+  } catch (e) { err.textContent = "上传失败: " + (e.message || e); err.style.display = "block"; }
+  finally { btn.disabled = false; btn.textContent = oldTxt; }
+};
+document.getElementById("btn-hu-upload").onclick = function () {
+  huDoUpload(document.getElementById("hu-file").files[0], this);
+};
+/* ---- 上传最新版本：File System Access API 直读本地目录里最新的 zip（Chrome/Edge 桌面版） ----
+   首次点击选目录（build_backend_zip.py 输出处，如 android/app/src/main/assets/backend），
+   目录句柄存 IndexedDB，之后一键直传，跳过手动选文件。 */
+function huIdbOpen() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open("otv-admin", 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore("kv");
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function huDirLoad() {
+  try {
+    const db = await huIdbOpen();
+    return await new Promise(res => {
+      const rq = db.transaction("kv", "readonly").objectStore("kv").get("huDir");
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    });
+  } catch (e) { return null; }
+}
+async function huDirSave(h) {
+  try { (await huIdbOpen()).transaction("kv", "readwrite").objectStore("kv").put(h, "huDir"); } catch (e) {}
+}
+function huDirHint(h) {
+  document.getElementById("hu-dir-hint").textContent = h
+    ? "最新 zip 目录：" + h.name
+    : "首次使用「上传最新版本」需选择本地 zip 输出目录（build_backend_zip.py 产物处）";
+  document.getElementById("btn-hu-dir").style.display = h ? "" : "none";
+}
+async function huLatestFile() {
+  let dh = await huDirLoad();
+  if (!dh) {
+    dh = await window.showDirectoryPicker({mode: "read"});
+    await huDirSave(dh); huDirHint(dh);
+  }
+  if (await dh.queryPermission({mode: "read"}) !== "granted"
+      && await dh.requestPermission({mode: "read"}) !== "granted")
+    return {error: "没有目录读取权限"};
+  let best = null;
+  for await (const ent of dh.values()) {
+    if (ent.kind === "file" && ent.name.toLowerCase().endsWith(".zip")) {
+      const f = await ent.getFile();
+      if (!best || f.lastModified > best.f.lastModified) best = {name: ent.name, f};
+    }
+  }
+  return best || {error: "所选目录里没有 zip——请指向 build_backend_zip.py 输出目录（含 python-backend.zip）"};
+}
+document.getElementById("btn-hu-dir").onclick = async () => {
+  try {
+    const dh = await window.showDirectoryPicker({mode: "read"});
+    await huDirSave(dh); huDirHint(dh);
+    toast("已更换最新 zip 目录：" + dh.name);
+  } catch (e) {}
+};
+document.getElementById("btn-hu-latest").onclick = async function () {
+  const err = document.getElementById("hu-err");
+  err.style.display = "none";
+  if (!window.showDirectoryPicker) {
+    err.textContent = "当前浏览器不支持一键上传（需 Chrome/Edge 桌面版），请用「上传所选文件」"; err.style.display = "block"; return;
+  }
+  let pick;
+  try { pick = await huLatestFile(); }
+  catch (e) { return; }  // 用户取消了目录选择
+  if (pick.error) { err.textContent = pick.error; err.style.display = "block"; return; }
+  document.getElementById("hu-fileinfo").textContent =
+    `${pick.name} · ${huMb(pick.f.size)} · ${new Date(pick.f.lastModified).toLocaleString()}`;
+  await huDoUpload(pick.f, this);
+};
+(async () => { huDirHint(await huDirLoad()); })();
+document.getElementById("hu-status").onchange = e => {
+  document.getElementById("hu-publish-at-row").style.display = e.target.value === "scheduled" ? "" : "none";
+  if (e.target.value === "scheduled") {
+    const inp = document.getElementById("hu-publish-at");
+    if (!inp.value) {
+      const d = new Date(Date.now() + 3600000); d.setSeconds(0, 0);
+      inp.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+  }
+};
+document.getElementById("hu-force").onchange = e => {
+  if (e.target.checked && !confirm("强制更新会阻断设备使用，直到该包下载完成并自动重启（坏包会自动隔离放行）。仅对 v1.18.1(20)+ 的公测 APK 生效。确认勾选？"))
+    e.target.checked = false;
+};
+document.getElementById("btn-hu-refresh").onclick = loadHuList;
+document.getElementById("btn-hulogs-refresh").onclick = loadHuLogs;
+
+/* ---- 公告（v1.20） ---- */
+async function loadAnn() {
+  const sub = document.getElementById("ann-sub");
+  const view = document.getElementById("ann-view");
+  const d = await api("ann_get");
+  if (d.error) { sub.textContent = "加载失败：" + esc(d.error); view.innerHTML = ""; return; }
+  const a = d.ann || d;
+  if (!a || !a.id) { sub.textContent = "暂无公告"; view.innerHTML = "<div class='hint' style='padding:8px 2px'>尚未发布过公告</div>"; return; }
+  sub.textContent = `#${a.id} · ${a.status === "published" ? "生效中" : "已下线"} · 更新于 ${esc(fmtT(a.updatedAt))}`;
+  view.innerHTML =
+    `<table class="grid"><tr><th>状态</th><th>标题</th><th>正文</th><th>更新时间</th></tr>` +
+    `<tr><td>${a.status === "published" ? '<span class="st ok">● 生效中</span>' : '<span class="dim">○ 已下线</span>'}</td>` +
+    `<td class="lbl">${esc(a.title)}</td>` +
+    `<td style="white-space:pre-wrap">${esc(a.content || "—")}</td>` +
+    `<td class="mono">${esc(fmtT(a.updatedAt))}</td></tr></table>`;
+}
+async function annPublish(status) {
+  const err = document.getElementById("ann-err"), ok = document.getElementById("ann-ok");
+  err.style.display = "none"; ok.style.display = "none";
+  const title = document.getElementById("ann-title").value.trim();
+  const content = document.getElementById("ann-content").value.trim();
+  if (status === "published" && !title) { err.textContent = "标题不能为空"; err.style.display = "block"; return; }
+  if (status === "offline" && !confirm("确认下线当前公告？app 下次轮询后悬浮窗消失。")) return;
+  const d = await api("ann_publish", {title: title || "下线", content, status});
+  if (d.error) { err.textContent = d.error; err.style.display = "block"; toast("公告操作失败", true); return; }
+  ok.textContent = status === "published" ? `公告 #${d.id ?? ""} 已发布，app 将在 ≤10 分钟内拉取展示` : "当前公告已下线";
+  ok.style.display = "block";
+  toast(status === "published" ? "公告已发布" : "公告已下线");
+  loadAnn();
+}
+document.getElementById("btn-ann-publish").onclick = () => annPublish("published");
+document.getElementById("btn-ann-offline").onclick = () => annPublish("offline");
+document.getElementById("btn-ann-refresh").onclick = loadAnn;
+/* 需求⑨：字数计数（输入即更新，接近上限转警示色） */
+[["ann-title", "ann-title-ct", 60], ["ann-content", "ann-content-ct", 600]].forEach(([inp, ct, max]) => {
+  const i = document.getElementById(inp), c = document.getElementById(ct);
+  if (!i || !c) return;
+  const upd = () => {
+    c.textContent = i.value.length + " / " + max;
+    c.style.color = i.value.length >= max ? "var(--warn)" : "";
+  };
+  i.addEventListener("input", upd);
+  upd();
+});
+
+/* ---- 电视源管理（v1.20 后台#8） ---- */
+let iptvRows = [], iptvSel = new Set(), iptvMode = "auto", iptvLogRows = [], iptvVerRows = [];
+async function loadIptv(soft) {
+  const kpis = document.getElementById("iptv-kpis");
+  const el = document.getElementById("iptv-table");
+  if (!soft) el.innerHTML = skel(6);
+  const d = await api("iptv_list");
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  iptvRows = d.channels || [];
+  iptvMode = d.mode || "auto";
+  const total = iptvRows.length, on = iptvRows.filter(r => r.enabled).length;
+  const lines = iptvRows.reduce((a, r) => a + r.lines.length, 0);
+  const groups = new Set(iptvRows.map(r => r.group));
+  kpis.innerHTML = `
+    <div class="cell"><b>${total}</b><span>频道总数</span></div>
+    <div class="cell"><b class="${on < total ? "amber" : ""}">${on}</b><span>启用中</span></div>
+    <div class="cell"><b>${lines}</b><span>线路总数</span></div>
+    <div class="cell"><b>${groups.size}</b><span>分组数</span></div>
+    <div class="cell"><b class="amber">${d.latest ? "v" + d.latest.version : "—"}</b><span>最新发布</span></div>
+    <div class="cell"><b class="${iptvMode === "manual" ? "amber" : "green"}">${iptvMode === "manual" ? "托管" : "自动"}</b><span>运行模式</span></div>`;
+  const sub = document.getElementById("iptv-mode-sub");
+  sub.textContent = iptvMode === "manual"
+    ? "托管模式：每日自动推流已暂停，latest 仅随手动发布变化"
+    : "自动模式：每日 06:30 云函数拉上游→测活→推流（精编名单+线路池语义）";
+  document.getElementById("iptv-mode-card").innerHTML = `<table class="grid">
+    <tr><td class="dim" style="width:180px">模式</td><td>${iptvMode === "manual" ? '<span class="st warn">◐ 托管（manual）</span> · 手动发布列表生效，自动推流跳过' : '<span class="st ok">● 自动（auto）</span> · 每日 06:30 自动推流'}</td></tr>
+    ${d.latest ? `<tr><td class="dim">最新发布</td><td>v${d.latest.version} · ${d.latest.channels} 频道 ${d.latest.lines} 线 · ${esc(fmtT(d.latest.createdAt))} · ${esc(d.latest.notes || "")}</td></tr>` : `<tr><td class="dim">最新发布</td><td class="dim">从未发布（当前 latest 为自动推流产物）</td></tr>`}</table>`;
+  // 分组下拉 + datalist（合并分组注册表：空分组也能在频道编辑里选用）
+  const gs = [...new Set([...groups, ...iptvGroups.map(g => g.name)])].sort((a, b) => a.localeCompare(b, "zh"));
+  const fg = document.getElementById("iptv-f-group");
+  const cur = fg.value;
+  fg.innerHTML = '<option value="">全部分组</option>' + gs.map(g => `<option${g === cur ? " selected" : ""}>${esc(g)}</option>`).join("");
+  document.getElementById("iptv-groups").innerHTML = gs.map(g => `<option value="${esc(g)}">`).join("");
+  document.getElementById("iptv-ch-sub").textContent = `${total} 频道 / ${lines} 线路`;
+  renderIptv();
+  /* 需求⑥：soft 刷新后按行签名脉冲，用户能看到刚改的那一行闪一下（而非整表白闪） */
+  pulseDiff("iptv-table", "iptv", Object.fromEntries(iptvRows.map(r => [r.id, (r.enabled ? 1 : 0) + ":" + r.sort + ":" + r.lines.filter(l => l.enabled !== false).length])));
+}
+function iptvMatches(r) {
+  const q = document.getElementById("iptv-q").value.trim().toLowerCase();
+  const g = document.getElementById("iptv-f-group").value;
+  const st = document.getElementById("iptv-f-st").value;
+  return (!q || r.name.toLowerCase().includes(q) || r.group.toLowerCase().includes(q)) &&
+    (!g || r.group === g) &&
+    (!st || (st === "on") === !!r.enabled);
+}
+function iptvFiltered() { return iptvRows.filter(iptvMatches); }
+function renderIptv() {
+  const el = document.getElementById("iptv-table");
+  if (!iptvRows.length) { el.innerHTML = `<div class="empty">频道表为空——用「导入 / API 同步」拉入上游，或「＋ 新增频道」手工添加。</div>`; return; }
+  /* 检索聚焦：全表保留，未命中行退暗纹（签名交互），批量操作仍只作用于命中行 */
+  let lastGroup = null, groupHit = 0, html = `<table class="grid pool"><tr><th style="width:34px"><input type="checkbox" id="iptv-selall" title="全选 / 清选当前筛选结果" onchange="iptvSelAll(this.checked)"></th><th style="width:64px">台标</th><th>频道</th><th>分组</th><th>线路</th><th style="width:56px">排序</th><th style="width:84px">状态</th><th></th></tr>`;
+  const rows = iptvRows;
+  for (const r of rows) {
+    if (r.group !== lastGroup) {
+      lastGroup = r.group;
+      groupHit = rows.filter(x => x.group === r.group && iptvMatches(x)).length;
+      html += `<tr class="grp${groupHit ? "" : " miss"}"><td colspan="8">${esc(r.group)}（${iptvRows.filter(x => x.group === r.group).length}）</td></tr>`;
+    }
+    const hit = iptvMatches(r);
+    const logo = r.logo
+      ? `<img src="${esc(r.logo)}" loading="lazy" alt="" style="width:40px;height:40px;object-fit:contain;background:#0a0c10;border:1px solid var(--line);border-radius:6px;padding:2px;display:block" onerror="this.style.visibility='hidden'" onload="this.style.visibility='visible'">`
+      : `<span class="dim">内置</span>`;
+    const note = r.note ? `<div class="dim" style="font-size:11px;margin-top:2px">${esc(r.note)}</div>` : "";
+    html += `<tr data-key="${r.id}"${hit ? "" : ' class="miss"'}>
+      <td><input type="checkbox" class="iptv-ck" data-id="${r.id}" ${iptvSel.has(r.id) ? "checked" : ""}></td>
+      <td>${logo}</td>
+      <td class="lbl">${esc(r.name)}${note}</td>
+      <td class="dim">${esc(r.group)}</td>
+      <td>${r.lines.length ? `<b>${r.lines.filter(l => l.enabled !== false).length}</b> 线` : '<span class="st bad">无线路</span>'}</td>
+      <td class="dim">${r.sort}</td>
+      <td>${r.enabled ? '<span class="st ok">● 启用</span>' : '<span class="st bad">○ 停用</span>'}</td>
+      <td style="white-space:nowrap">
+        ${r.lines.length ? `<button class="ghost mini" style="color:var(--amber)" onclick="iptvPlay(${r.id})">▶ 试播</button>` : ""}
+        <button class="ghost mini" onclick="iptvEditOpen(${r.id})">编辑</button>
+        <button class="ghost mini" onclick="iptvMove(${r.id},-1)">↑</button>
+        <button class="ghost mini" onclick="iptvMove(${r.id},1)">↓</button>
+        <button class="ghost mini" style="color:var(--bad)" onclick="iptvDel(${r.id})">删除</button>
+      </td></tr>`;
+  }
+  el.innerHTML = html + "</table>";
+  document.querySelectorAll(".iptv-ck").forEach(ck => ck.onchange = () => {
+    ck.checked ? iptvSel.add(+ck.dataset.id) : iptvSel.delete(+ck.dataset.id);
+  });
+  /* 表头全选框三态 + 批量按钮随勾选数置灰/解禁 */
+  const sa = document.getElementById("iptv-selall");
+  if (sa) {
+    const fl = iptvFiltered();
+    sa.checked = fl.length > 0 && fl.every(r => iptvSel.has(r.id));
+    sa.indeterminate = !sa.checked && fl.some(r => iptvSel.has(r.id));
+  }
+  document.querySelectorAll("#tab-iptv .batch-btn").forEach(b => b.disabled = iptvSel.size === 0);
+}
+function iptvSelAll(on) {
+  iptvFiltered().forEach(r => on ? iptvSel.add(r.id) : iptvSel.delete(r.id));
+  renderIptv();
+}
+async function iptvBatch(op) {
+  const ids = [...iptvSel];
+  if (!ids.length) { toast("先勾选频道行", true); return; }
+  if (op === "delete" && !confirm(`删除勾选的 ${ids.length} 个频道（连带线路）？`)) return;
+  const d = await api("iptv_batch", {ops: ids.map(id => ({op, id}))});
+  if (d.ret === 0) { toast(`已${op === "enable" ? "启用" : op === "disable" ? "停用" : "删除"} ${d.affected} 项`); iptvSel.clear(); loadIptv(true); }
+  else toast("失败：" + (d.error || d.msg), true);
+}
+async function iptvMove(id, delta) {
+  const r = iptvRows.find(x => x.id === id);
+  if (!r) return;
+  const d = await api("iptv_batch", {ops: [{op: "move", id, delta}]});
+  if (d.ret === 0) { r.sort = Math.max(0, r.sort + delta); renderIptv(); }
+}
+async function iptvDel(id) {
+  const r = iptvRows.find(x => x.id === id);
+  if (!confirm(`删除频道「${r ? r.name : id}」及其全部线路？`)) return;
+  const d = await api("iptv_delete", {id});
+  if (d.ret === 0) { toast("已删除"); loadIptv(true); } else toast("失败：" + (d.error || d.msg), true);
+}
+
+/* ---- 电视源试播（v1.22）：hls.js + 网页版中继播放。云端后台页与 /web 同源，直走
+     同源中继（网关对带 Origin 的跨源请求会回显 ACAO，与函数侧 * 叠成双值被浏览器拒，
+     故本地后台不可跨源调云端中继，只能直连源试播——能播 CORS 全开的源，其余给提示）。 ---- */
+const IPTV_LOCAL = /127\.0\.0\.1|localhost/.test(location.hostname);
+let ipHls = null, ipChan = null, ipLine = 0;
+const ipVeil = () => document.getElementById("iptv-play-veil");
+const ipVideo = () => document.getElementById("ip-video");
+const iptvRelayUrl = u => IPTV_LOCAL ? u
+  : location.origin + "/web/api/relay?u=" + encodeURIComponent(u) + "&ref=none";
+
+function iptvPlay(id) {
+  const r = iptvRows.find(x => x.id === id);
+  if (!r || !r.lines.length) { toast("该频道没有线路，先到编辑里补一条", true); return; }
+  ipChan = r;
+  const first = r.lines.findIndex(l => l.enabled !== false);
+  ipLine = first >= 0 ? first : 0;
+  document.getElementById("ip-title").textContent = "▶ " + r.name;
+  ipVeil().style.display = "";
+  iptvPlayLoad();
+}
+function iptvPlayLoad() {
+  const r = ipChan; if (!r) return;
+  const err = document.getElementById("ip-err");
+  err.style.display = "none";
+  if (ipLine >= r.lines.length) {
+    err.textContent = "全部线路播放失败——源可能已失效，稍后复测或到编辑里更新线路。" +
+      (IPTV_LOCAL ? "本机后台为直连试播，仅能播允许跨域的源；完整试播请用云端后台。" :
+                    (window.Hls ? "" : "（hls.js 未加载成功，本浏览器无法解 HLS 流）"));
+    err.style.display = "block";
+    document.getElementById("ip-line").textContent = "";
+    iptvPlayStopStream();
+    return;
+  }
+  const line = r.lines[ipLine];
+  document.getElementById("ip-line").textContent =
+    `线路 ${ipLine + 1}/${r.lines.length}${line.enabled === false ? "（停用线路）" : ""} · 加载中…`;
+  document.getElementById("ip-url").textContent = line.url;
+  iptvPlayStopStream();
+  const src = iptvRelayUrl(line.url);
+  const onFatal = () => {
+    if (ipVeil().style.display === "none" || !ipChan) return;
+    document.getElementById("ip-line").textContent =
+      `线路 ${ipLine + 1}/${r.lines.length} · 失效，自动换下一线…`;
+    setTimeout(() => { if (ipChan) { ipLine++; iptvPlayLoad(); } }, 400);
+  };
+  const video = ipVideo();
+  // 仅 m3u8 走 hls.js（XHR 取流受 CORS 约束）；mp4 等直链走原生 video.src（免 CORS）
+  if (window.Hls && Hls.isSupported() && /\.m3u8(\?|#|$)/i.test(line.url)) {
+    ipHls = new Hls({maxBufferLength: 24, maxMaxBufferLength: 60,
+                     manifestLoadingTimeOut: 20000, fragLoadingTimeOut: 30000});
+    ipHls.loadSource(src);
+    ipHls.attachMedia(video);
+    ipHls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) onFatal(); });
+  } else {
+    video.src = src;          // 原生播放：Safari 原生 HLS / mp4 直链
+    video.onerror = onFatal;
+  }
+  video.play().catch(() => {  // 自动播放被拦（手势过期）→ 静音重试，用户点视频自行取消静音
+    video.muted = true;
+    video.play().catch(() => {});
+  });
+  video.onplaying = () => {
+    document.getElementById("ip-line").textContent =
+      `线路 ${ipLine + 1}/${r.lines.length}${line.enabled === false ? "（停用线路）" : ""} · 播放中`;
+  };
+}
+function iptvPlaySwitch(delta) {
+  if (!ipChan) return;
+  const n = ipChan.lines.length;
+  ipLine = ((ipLine + delta) % n + n) % n;
+  iptvPlayLoad();
+}
+function iptvPlayClose() {
+  ipVeil().style.display = "none";
+  iptvPlayStopStream();
+  ipChan = null;
+}
+function iptvPlayStopStream() {
+  if (ipHls) { ipHls.destroy(); ipHls = null; }
+  const video = ipVideo();
+  video.onplaying = null;
+  video.onerror = null;
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+}
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && ipVeil().style.display !== "none") iptvPlayClose();
+});
+let iptvEditId = null;
+function iptvEditOpen(id) {
+  const r = id != null ? iptvRows.find(x => x.id === id) : null;
+  iptvEditId = id != null ? id : null;
+  document.getElementById("iptv-edit-title").textContent = r ? `编辑：${r.name}` : "新增频道";
+  document.getElementById("ie-name").value = r ? r.name : "";
+  document.getElementById("ie-group").value = r ? r.group : "";
+  document.getElementById("ie-logo").value = r ? (r.logo || "") : "";
+  document.getElementById("ie-sort").value = r ? r.sort : 0;
+  document.getElementById("ie-note").value = r ? (r.note || "") : "";
+  document.getElementById("ie-lines").value = r ? r.lines.map(l => l.url).join("\n") : "";
+  document.getElementById("ie-enabled").checked = r ? r.enabled : true;
+  document.getElementById("iptv-edit-err").textContent = "";
+  document.getElementById("ie-logo-st").textContent = "PNG / JPG / WEBP ≤2MB，上传后自动填入";
+  iptvLogoPreview();
+  document.getElementById("iptv-edit-veil").style.display = "";
+  document.getElementById("ie-name").focus();
+}
+/* 台标预览/上传（2026-09-05）：URL 手填或点「上传图片」直传公开桶后自动回填 */
+function iptvLogoPreview() {
+  const u = document.getElementById("ie-logo").value.trim();
+  const img = document.getElementById("ie-logo-prev");
+  if (!u) { img.removeAttribute("src"); img.style.visibility = "hidden"; return; }
+  img.style.visibility = "visible";
+  img.src = u;
+}
+async function iptvLogoUp(inp) {
+  const f = inp.files && inp.files[0];
+  inp.value = "";
+  const st = document.getElementById("ie-logo-st");
+  if (!f) return;
+  if (f.size > 2 * 1024 * 1024) { st.textContent = "文件超过 2MB"; return; }
+  st.textContent = "上传中…";
+  try {
+    const name = document.getElementById("ie-name").value.trim() || "logo";
+    const r = await fetch(API_BASE + "api/iptv_logo_upload?name=" + encodeURIComponent(name),
+      { method: "POST", headers: { "Content-Type": "application/octet-stream" },
+        credentials: "same-origin", body: await f.arrayBuffer() });
+    const d = await r.json();
+    if (d.error) { st.textContent = d.error; return; }
+    document.getElementById("ie-logo").value = d.url;
+    iptvLogoPreview();
+    st.textContent = "已上传 ✓（保存频道后，发布才对客户端生效）";
+  } catch (e) { st.textContent = "上传失败：" + e.message; }
+}
+function gotoPanel(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+document.getElementById("ie-logo-file").addEventListener("change", () => iptvLogoUp(document.getElementById("ie-logo-file")));
+function iptvEditClose() { document.getElementById("iptv-edit-veil").style.display = "none"; }
+async function iptvSave() {
+  const name = document.getElementById("ie-name").value.trim();
+  const group = document.getElementById("ie-group").value.trim() || "其他";
+  const lines = document.getElementById("ie-lines").value.split("\n").map(s => s.trim()).filter(s => /^https?:\/\//.test(s));
+  const err = document.getElementById("iptv-edit-err");
+  if (!name) { err.textContent = "频道名必填"; return; }
+  if (!lines.length) { err.textContent = "至少一条有效线路（http(s):// 开头）"; return; }
+  const d = await api("iptv_save", {
+    id: iptvEditId,
+    name, group,
+    logo: document.getElementById("ie-logo").value.trim(),
+    sort: +document.getElementById("ie-sort").value || 0,
+    enabled: document.getElementById("ie-enabled").checked,
+    note: document.getElementById("ie-note").value.trim(),
+    urls: lines});
+  if (d.ret === 0) { iptvEditClose(); toast(`已保存「${name}」（${lines.length} 线）· 发布后生效`); loadIptv(true); }
+  else err.textContent = "保存失败：" + (d.error || d.msg || JSON.stringify(d));
+}
+async function iptvImportGo(m3uText, url) {
+  const err = document.getElementById("iptv-imp-err"), ok = document.getElementById("iptv-imp-ok");
+  err.style.display = ok.style.display = "none";
+  const mode = document.getElementById("iptv-import-mode").value;
+  const btn = document.getElementById("btn-iptv-import");
+  btn.disabled = true; btn.textContent = "导入中…";
+  const d = await api("iptv_import", {m3u: m3uText || "", url: url || "", mode});
+  btn.disabled = false; btn.textContent = "导入";
+  if (d.error) { err.textContent = d.error; err.style.display = "block"; toast("导入失败", true); return; }
+  ok.innerHTML = `导入完成：解析 <b>${d.parsed ?? "?"}</b> 频道 → 新增 <b>${d.added}</b> / 更新 <b>${d.updated}</b> / 线路 <b>${d.lines}</b>（${mode === "replace" ? "替换" : "合并"}模式）<br>审核后到「发布新版本」生效。`;
+  ok.style.display = "block";
+  toast(`导入 ${d.parsed} 频道（新增 ${d.added}）`);
+  loadIptv();
+}
+document.getElementById("btn-iptv-import").onclick = () => {
+  const f = document.getElementById("iptv-file").files[0];
+  const text = document.getElementById("iptv-text").value.trim();
+  const url = document.getElementById("iptv-url").value.trim();
+  if (f) {
+    if (f.size > 32 * 1048576) { toast("文件超过 32MB", true); return; }
+    const rd = new FileReader();
+    rd.onload = () => iptvImportGo(String(rd.result), "");
+    rd.readAsText(f, "utf-8");
+  } else if (text) iptvImportGo(text, "");
+  else if (url) iptvImportGo("", url);
+  else toast("先选择文件 / 粘贴文本 / 填 URL", true);
+};
+async function iptvSync() {
+  const btn = document.getElementById("btn-iptv-sync");
+  const mode = document.getElementById("iptv-import-mode").value;
+  btn.disabled = true; btn.textContent = "同步中（拉上游 16MB 级，需数十秒）…";
+  const d = await api("iptv_sync", {mode});
+  btn.disabled = false; btn.textContent = "API 同步（Guovin / vbskycn 上游）";
+  if (d.error) { toast("同步失败：" + d.error, true); return; }
+  toast(`同步 ${d.parsed} 频道（新增 ${d.added} / 线路 ${d.lines}）`);
+  loadIptv();
+}
+async function iptvPublish() {
+  const err = document.getElementById("iptv-pub-err"), ok = document.getElementById("iptv-pub-ok");
+  err.style.display = ok.style.display = "none";
+  const btn = document.getElementById("btn-iptv-publish");
+  btn.disabled = true; btn.textContent = "发布中…";
+  const d = await api("iptv_publish", {notes: document.getElementById("iptv-notes").value.trim()});
+  btn.disabled = false; btn.textContent = "发布并生效";
+  if (d.error) { err.textContent = d.error; err.style.display = "block"; toast("发布失败", true); return; }
+  if (d.ret !== 0) { err.textContent = d.msg || d.error || JSON.stringify(d); err.style.display = "block"; return; }
+  ok.innerHTML = `版本 <b>v${d.version}</b> 已发布：${d.channels} 频道 / ${d.lines} 线路 · ${(d.size / 1024).toFixed(1)}KB<br>客户端 SOURCES 首位 ≤30 分钟自动拉取；已切托管模式。`;
+  ok.style.display = "block";
+  toast(`电视源 v${d.version} 已发布（${d.channels} 频道）`);
+  document.getElementById("iptv-notes").value = "";
+  loadIptv(); loadIptvVersions();
+}
+async function loadIptvVersions() {
+  const el = document.getElementById("iptv-ver-table");
+  el.innerHTML = skel(4);
+  const d = await api("iptv_versions", {limit: 100});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  iptvVerRows = d.rows || [];
+  if (!iptvVerRows.length) { el.innerHTML = `<div class="empty">尚未发布过版本——导入频道后点「发布并生效」。</div>`; return; }
+  el.innerHTML = `<table class="grid"><tr><th>版本</th><th>频道</th><th>线路</th><th>大小</th><th>SHA-256</th><th>状态</th><th>说明</th><th>时间</th><th></th></tr>` +
+    iptvVerRows.map(r => `<tr data-key="v${r.version}">
+      <td><b>v${r.version}</b></td>
+      <td>${r.channels}</td><td>${r.lines}</td>
+      <td>${r.file_size ? (r.file_size / 1024).toFixed(1) + "KB" : "—"}</td>
+      <td title="${esc(r.sha256)}">${r.sha256 ? esc(r.sha256.slice(0, 12)) + "…" : "—"}</td>
+      <td>${r.status === "published" ? '<span class="st ok">● 生效中</span>' : r.status === "pending" ? '<span class="st warn">◌ 进行中</span>' : r.status === "failed" ? '<span class="st bad">✕ 失败</span>' : '<span class="dim">○ 历史</span>'}</td>
+      <td class="dim lbl">${esc(r.notes || "")}</td>
+      <td class="dim">${fmtT(r.created_at)}</td>
+      <td>${r.status !== "published" ? `<button class="ghost mini" style="color:var(--amber)" onclick="iptvRollback(${r.version})">回滚到此</button>` : ""}</td></tr>`).join("") + "</table>";
+}
+async function iptvRollback(v) {
+  if (!confirm(`回滚到 v${v}？（归档对象复制到 latest，生成新版本号；已切托管模式）`)) return;
+  const d = await api("iptv_rollback", {version: v});
+  if (d.ret === 0) { toast(`已回滚：v${v} → 新版本 v${d.version} 生效`); loadIptvVersions(); loadIptv(); }
+  else toast("回滚失败：" + (d.error || d.msg), true);
+}
+async function loadIptvLogs() {
+  const el = document.getElementById("iptv-log-table");
+  el.innerHTML = skel(4);
+  const d = await api("iptv_logs", {limit: 200});
+  if (d.error) { el.innerHTML = `<div class="empty">加载失败：${esc(d.error)}</div>`; return; }
+  iptvLogRows = d.rows || [];
+  renderIptvLogs();
+}
+function renderIptvLogs() {
+  const el = document.getElementById("iptv-log-table");
+  if (!iptvLogRows.length) { el.innerHTML = `<div class="empty">暂无操作记录。</div>`; return; }
+  el.innerHTML = `<table class="grid"><tr><th>时间</th><th>动作</th><th>详情</th></tr>` +
+    iptvLogRows.map(r => `<tr><td class="dim">${fmtT(r.created_at)}</td>
+      <td class="lbl">${esc(r.action)}</td><td class="dim lbl">${esc(r.detail || "")}</td></tr>`).join("") + "</table>";
+}
+function iptvExportLogs() {
+  if (!iptvLogRows.length) { toast("先刷新日志", true); return; }
+  const csv = "时间,动作,详情\n" + iptvLogRows.map(r =>
+    [new Date(r.created_at).toLocaleString("sv-SE"), r.action, (r.detail || "").replace(/"/g, '""')]
+      .map(x => `"${x}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], {type: "text/csv"}));
+  a.download = `otv-iptv-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  toast(`已导出 ${iptvLogRows.length} 条日志`);
+}
+async function iptvSetMode(mode) {
+  if (mode === "manual" && !confirm("切托管模式：每日 06:30 自动推流暂停，latest 仅随手动发布变化。确认？")) return;
+  if (mode === "auto" && !confirm("切自动模式：明晨起每日自动推流恢复，将覆盖当前 latest（托管列表失效回到精编+线路池）。确认？")) return;
+  const d = await api("iptv_mode", {mode});
+  if (d.ret === 0) { toast(mode === "manual" ? "已切托管模式" : "已切自动模式"); loadIptv(); }
+  else toast("失败：" + (d.error || d.msg), true);
+}
+async function iptvProbe() {
+  const card = document.getElementById("iptv-mode-card");
+  card.innerHTML = skel(2);
+  const d = await api("iptv_latest");
+  if (d.error) { card.innerHTML = `<div class="empty">探测失败：${esc(d.error)}</div>`; return; }
+  card.innerHTML = `<table class="grid">
+    <tr><td class="dim" style="width:180px">线上 latest</td><td>${d.channels} 频道 / ${d.lines} 线 · ${d.managed ? '<span class="st warn">托管列表（分组生效，客户端整表采用）</span>' : '<span class="st ok">自动推流产物（精编名单+线路池）</span>'}</td></tr>
+    <tr><td class="dim">meta.mode</td><td>${esc(d.mode || "—")} · 更新于 ${esc(d.updatedAt || "—")}</td></tr></table>`;
+  toast(`线上 latest：${d.channels} 频道（${d.managed ? "托管" : "自动"}）`);
+}
+document.getElementById("iptv-q").oninput = renderIptv;
+document.getElementById("iptv-f-group").onchange = renderIptv;
+document.getElementById("iptv-f-st").onchange = renderIptv;
+document.getElementById("btn-iptv-versions").onclick = loadIptvVersions;
+document.getElementById("btn-iptv-logs").onclick = loadIptvLogs;
+
+/* ---- 频道分组管理（2026-09-05 需求③：新建/重命名/删除/排序） ---- */
+let iptvGroups = [];
+async function iptvGroupLoad(soft) {
+  const t = document.getElementById("iptv-group-table");
+  t.innerHTML = skel(3);
+  const d = await api("iptv_group_list");
+  if (d.error) { t.innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+  iptvGroups = Array.isArray(d) ? d : [];
+  iptvGroupRender();
+}
+function iptvGroupRender() {
+  const t = document.getElementById("iptv-group-table");
+  if (!iptvGroups.length) { t.innerHTML = `<div class="empty">暂无分组（导入频道后自动出现）</div>`; return; }
+  t.innerHTML = `<table class="grid"><tr><th style="width:52px">顺序</th><th>分组</th><th style="width:120px">频道 / 启用</th><th style="width:320px">操作</th></tr>` +
+    iptvGroups.map((g, i) => `<tr>
+      <td class="dim">${i + 1}</td>
+      <td><b>${esc(g.name)}</b></td>
+      <td class="dim">${g.channels} / ${g.enabled}</td>
+      <td>
+        <button class="ghost mini" onclick="iptvGroupMove(${g.id},-1)"${i === 0 ? " disabled" : ""}>↑</button>
+        <button class="ghost mini" onclick="iptvGroupMove(${g.id},1)"${i === iptvGroups.length - 1 ? " disabled" : ""}>↓</button>
+        <button class="ghost mini" onclick="iptvGroupRename(${g.id})">重命名</button>
+        <button class="ghost mini" style="color:var(--bad)" onclick="iptvGroupDelete(${g.id})">删除</button>
+      </td></tr>`).join("") + `</table>`;
+}
+async function iptvGroupCreate() {
+  const el = document.getElementById("iptv-g-new");
+  const name = el.value.trim();
+  if (!name) { toast("请输入分组名"); return; }
+  const d = await api("iptv_group_create", { name });
+  if (d.error) { toast("新建失败：" + d.error); return; }
+  el.value = "";
+  toast(`分组「${name}」已创建（可在 ② 编辑频道时选用）`);
+  iptvGroupLoad(true); loadIptv(true);
+}
+function iptvGroupRename(id) {
+  const g = iptvGroups.find(x => x.id === id);
+  if (!g) return;
+  const name = prompt("重命名分组（该组频道同步迁移）", g.name);
+  if (name === null || !name.trim() || name.trim() === g.name) return;
+  api("iptv_group_rename", { id, name: name.trim() }).then(d => {
+    if (d.error) { toast("重命名失败：" + d.error); return; }
+    toast("已重命名"); iptvGroupLoad(true); loadIptv(true);
+  });
+}
+function iptvGroupDelete(id) {
+  const g = iptvGroups.find(x => x.id === id);
+  if (!g) return;
+  const moveTo = prompt(`删除分组「${g.name}」（含 ${g.channels} 个频道）。\n这 ${g.channels} 个频道移入哪个分组？（留空 = 未分组）`, "");
+  if (moveTo === null) return;
+  api("iptv_group_delete", { id, moveTo: moveTo.trim() }).then(d => {
+    if (d.error) { toast("删除失败：" + d.error); return; }
+    toast(`已删除；${d.moved || 0} 个频道移入「${d.move_to || "未分组"}」`);
+    iptvGroupLoad(true); loadIptv(true);
+  });
+}
+async function iptvGroupMove(id, delta) {
+  const d = await api("iptv_group_move", { id, delta });
+  if (d.error) { toast("排序失败：" + d.error); return; }
+  iptvGroupLoad();
+}
+/* ---- 自动管理一键重建（2026-09-05 需求③：找源+测活+推送） ---- */
+async function iptvAutoRun() {
+  if (!confirm("立即执行自动重建？\n\n拉上游聚合源 → 全线测活（最长约 45s）→ 剔死线 → 推送 latest。\n自动模式下与每日云函数同产物；托管模式下 latest 会被覆盖（可 ④ 回滚）。")) return;
+  const card = document.getElementById("iptv-mode-card");
+  card.innerHTML = `<div class="empty">⟳ 自动重建执行中：拉源 + 测活（最长 ~45s，请勿关闭页面）…</div>`;
+  const d = await api("iptv_auto_run");
+  if (d.error) { card.innerHTML = `<div class="empty">自动重建失败：${esc(d.error)}</div>`; toast("自动重建失败"); return; }
+  card.innerHTML = `<table class="grid">
+    <tr><td class="dim" style="width:180px">自动重建完成</td><td>v${d.version} · ${d.channels} 频道 / ${d.lines} 活线（已推 latest）</td></tr>
+    <tr><td class="dim">测活明细</td><td>探测 ${d.probed} 线 · 存活 ${d.alive} · 剔除 ${d.dead} · 耗时 ${((d.elapsedMs || 0) / 1000).toFixed(1)}s</td></tr>
+    <tr><td class="dim">上游</td><td class="mono" style="font-size:11px">${esc(d.upstream || "—")}</td></tr></table>`;
+  toast(`自动重建完成：v${d.version}（${d.channels} 频道 / ${d.lines} 线）`);
+  loadIptvVersions();
+}
+
+/* ---- 影视源草稿、发布与指定影片测试 ---- */
+let vodSourceRows = [], vodSourceEditId = null, vodSourceTestRow = null, vodSourceHls = null;
+function vodRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.drafts)) return payload.drafts;
+  if (Array.isArray(payload.rows)) return payload.rows;
+  if (Array.isArray(payload.sources)) return payload.sources;
+  return [];
+}
+async function loadVodSources() {
+  const table = document.getElementById("vod-source-table");
+  table.innerHTML = skel(5);
+  const d = await api("vod_source_list");
+  if (d.error || (d.ret != null && d.ret !== 0)) {
+    table.innerHTML = `<div class="empty">加载失败：${esc(d.error || d.msg || "未知错误")}</div>`;
+    return;
+  }
+  vodSourceRows = vodRows(d);
+  document.getElementById("vod-source-version").textContent = `草稿 ${vodSourceRows.length} 个源 · 已发布 v${d.published_version || d.publishedVersion || d.version || 0}`;
+  document.getElementById("vod-source-draft-state").style.display = d.dirty === false ? "none" : "inline-block";
+  if (!vodSourceRows.length) { table.innerHTML = '<div class="empty">暂无影视源，可从网站识别或手动新增。</div>'; return; }
+  table.innerHTML = `<table class="grid"><tr><th>顺序</th><th>名称</th><th>网站 / 接口</th><th>适配器</th><th>状态</th><th>操作</th></tr>` +
+    vodSourceRows.map((s, i) => `<tr>
+      <td class="dim">${s.sort_order ?? i}</td><td><b>${esc(s.name)}</b></td>
+      <td class="mono" style="font-size:11px;max-width:380px;word-break:break-all">${esc(s.site_url || "—")}<br><span class="dim">${esc(s.api_url || "—")}</span></td>
+      <td><span class="tag">${esc(s.adapter_type)}</span></td><td>${s.enabled ? '<span class="st ok">启用</span>' : '<span class="dim">停用</span>'}</td>
+      <td><button class="ghost mini" onclick="vodSourceTest(${i})">测试</button> <button class="ghost mini" onclick="vodSourceEdit(${i})">编辑</button> <button class="ghost mini" style="color:var(--bad)" onclick="vodSourceDelete(${i})">删除</button></td>
+    </tr>`).join("") + "</table>";
+}
+function vodSourceEdit(index) {
+  const row = index == null ? {} : vodSourceRows[index];
+  vodSourceEditId = row.id || null;
+  document.getElementById("vod-source-edit-title").textContent = row.id ? `编辑 ${row.name}` : "新增影视源";
+  document.getElementById("vse-name").value = row.name || "";
+  document.getElementById("vse-site").value = row.site_url || "";
+  document.getElementById("vse-api").value = row.api_url || "";
+  document.getElementById("vse-adapter").value = row.adapter_type || "macms_json";
+  document.getElementById("vse-sort").value = row.sort_order ?? vodSourceRows.length;
+  document.getElementById("vse-enabled").checked = row.enabled !== false;
+  document.getElementById("vod-source-edit-error").textContent = "";
+  document.getElementById("vod-source-edit-veil").style.display = "flex";
+}
+function vodSourceEditClose() { document.getElementById("vod-source-edit-veil").style.display = "none"; }
+async function vodSourceSave() {
+  const payload = {id: vodSourceEditId, name: document.getElementById("vse-name").value.trim(), site_url: document.getElementById("vse-site").value.trim(), api_url: document.getElementById("vse-api").value.trim(), adapter_type: document.getElementById("vse-adapter").value, sort_order: +document.getElementById("vse-sort").value || 0, enabled: document.getElementById("vse-enabled").checked};
+  const d = await api("vod_source_save", payload);
+  if (d.error || (d.ret != null && d.ret !== 0)) { document.getElementById("vod-source-edit-error").textContent = d.error || d.msg || "保存失败"; return; }
+  vodSourceEditClose(); toast("影视源草稿已保存，尚未推送"); loadVodSources();
+}
+async function vodSourceDiscover() {
+  const input = document.getElementById("vod-source-site-input"), site = input.value.trim();
+  if (!site) { toast("请输入网站地址", true); return; }
+  const d = await api("vod_source_discover", {site_url: site});
+  if (d.error) { toast("识别失败：" + d.error, true); return; }
+  const s = d.source || {};
+  vodSourceEdit(null);
+  document.getElementById("vse-name").value = s.name || "";
+  document.getElementById("vse-site").value = s.site_url || site;
+  document.getElementById("vse-api").value = s.api_url || "";
+  document.getElementById("vse-adapter").value = s.adapter_type || "macms_json";
+}
+async function vodSourceDelete(index) {
+  const row = vodSourceRows[index];
+  if (!row || !confirm(`删除影视源“${row.name}”？\n删除只进入草稿，点击立即推送后客户端才会移除。`)) return;
+  const d = await api("vod_source_delete", {id: row.id});
+  if (d.error || (d.ret != null && d.ret !== 0)) { toast("删除失败：" + (d.error || d.msg), true); return; }
+  toast("已从草稿删除，尚未推送"); loadVodSources();
+}
+async function vodSourcePublish() {
+  if (!confirm("立即推送当前影视源草稿？\n客户端下次检查配置时会原子更新；推送失败仍使用旧配置。")) return;
+  const btn = document.getElementById("btn-vod-source-publish");
+  btn.disabled = true; btn.textContent = "推送中…";
+  const d = await api("vod_source_publish");
+  btn.disabled = false; btn.textContent = "立即推送";
+  if (d.error || (d.ret != null && d.ret !== 0)) { toast("推送失败：" + (d.error || d.msg), true); return; }
+  toast(`影视源 v${d.version || "新版本"} 已推送`); loadVodSources();
+}
+function vodSourceTest(index) {
+  vodSourceTestRow = vodSourceRows[index];
+  document.getElementById("vod-source-test-title").textContent = `测试 ${vodSourceTestRow.name}`;
+  document.getElementById("vod-source-test-result").innerHTML = "输入片名后开始测试。";
+  document.getElementById("vod-source-test-veil").style.display = "flex";
+}
+function vodSourceTestClose() {
+  const video = document.getElementById("vod-source-preview");
+  if (vodSourceHls) { vodSourceHls.destroy(); vodSourceHls = null; }
+  video.pause(); video.removeAttribute("src"); video.load(); video.style.display = "none";
+  document.getElementById("vod-source-test-veil").style.display = "none";
+}
+function vodSourcePreview(url) {
+  const video = document.getElementById("vod-source-preview");
+  video.style.display = "block";
+  if (vodSourceHls) vodSourceHls.destroy();
+  if (window.Hls && Hls.isSupported() && /\.m3u8(?:$|\?)/i.test(url)) { vodSourceHls = new Hls(); vodSourceHls.loadSource(url); vodSourceHls.attachMedia(video); }
+  else video.src = url;
+  video.play().catch(() => {});
+}
+async function vodSourceTestRun() {
+  const title = document.getElementById("vst-title").value.trim();
+  if (!title) { toast("请输入影片名称", true); return; }
+  const btn = document.getElementById("btn-vod-source-test-run"), result = document.getElementById("vod-source-test-result");
+  btn.disabled = true; btn.textContent = "测试中…"; result.innerHTML = "正在搜索并解析该源…";
+  const d = await api("vod_source_test", {source: vodSourceTestRow, title, year: document.getElementById("vst-year").value.trim(), episode: +document.getElementById("vst-episode").value || 1});
+  btn.disabled = false; btn.textContent = "开始测试";
+  if (d.error) { result.innerHTML = `<span class="st bad">不可用</span> · ${esc(d.error)}`; return; }
+  const klass = d.grade === "优秀" || d.grade === "良好" ? "ok" : d.grade === "一般" ? "warn" : "bad";
+  result.innerHTML = `<b class="st ${klass}" style="font-size:18px">${esc(d.grade)}</b> · 综合 ${d.score ?? 0} 分<br><span class="dim">${esc(d.summary || "")}</span>` + (d.preview_url ? '<br><button class="act" style="margin-top:10px" id="btn-vod-preview">试看</button>' : "");
+  if (d.preview_url) document.getElementById("btn-vod-preview").onclick = () => vodSourcePreview(d.preview_url);
+}
+
+/* ---- tab 切换 ---- */
+document.querySelectorAll("nav.verbs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav.verbs button").forEach(x => x.classList.toggle("on", x === b));
+  ["overview","licenses","logs","gen","hu","ann","iptv","vod-sources"].forEach(t =>
+    document.getElementById("tab-" + t).style.display = t === b.dataset.tab ? "" : "none");
+  if (b.dataset.tab === "overview") { loadStats(); loadHealth(); loadOvLedger(); }
+  if (b.dataset.tab === "licenses") loadList();
+  if (b.dataset.tab === "logs") loadLogs();
+  if (b.dataset.tab === "hu") loadHu();
+  if (b.dataset.tab === "ann") loadAnn();
+  if (b.dataset.tab === "iptv") { loadIptv(); loadIptvVersions(); loadIptvLogs(); iptvGroupLoad(); }
+  if (b.dataset.tab === "vod-sources") loadVodSources();
+});
+document.getElementById("btn-search").onclick = () => { page = 0; loadList(); };
+document.getElementById("q").onkeydown = e => { if (e.key === "Enter") { page = 0; loadList(); } };
+document.getElementById("btn-logs").onclick = loadLogs;
+document.getElementById("log-q").onkeydown = e => { if (e.key === "Enter") loadLogs(); };
+document.getElementById("prev").onclick = () => { if (page > 0) { page--; loadList(); } };
+document.getElementById("next").onclick = () => { page++; loadList(); };
+document.getElementById("btn-gen").onclick = gen;
+document.getElementById("btn-rehealth").onclick = loadHealth;
+
+loadStats();
+loadHealth();
+loadOvLedger();
+/* hash 深链：#licenses 直开对应标签页 */
+const h = location.hash.slice(1);
+if (["overview","licenses","logs","gen","hu","ann","iptv","vod-sources"].includes(h) && h !== "overview")
+  document.querySelector(`nav.verbs button[data-tab="${h}"]`).click();
+</script>
+<!-- v1.22 试播浮层用：与网页版同版本 hls.js；加载失败时退回 video 原生 HLS（Safari） -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js" defer></script>
+</body>
+</html>
