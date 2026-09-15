@@ -77,3 +77,5 @@ npm run build && npm run validate
 | `GET /iptv/latest` | 200，17.4KB m3u |
 | `GET /objects/backend-hu17.zip`（Range） | 206 / `bytes 0-1023/40416518` |
 | `GET /api/state`（未登录） | 401（后台门禁生效） |
+| 正确密码登录 | 200 + 会话 Cookie |
+| 连续 5 次错误密码 | 第 6 次起 429（v5 修复前：12 次连发全部 401） |
