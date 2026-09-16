@@ -1550,7 +1550,38 @@ function iptvPlay(id) {
   ipVeil().style.display = "";
   iptvPlayLoad();
 }
-function iptvPlayLoad() {
+/* hls.js 按需加载：以前在 <head>/<body> 里直接 <script src=cdn.jsdelivr…> 拉，
+   国内网络经常连不上，浏览器标签会一直转圈（看起来像"打不开"）。改成点播放时才加载，
+   并且三个 CDN 轮流试；都失败就退回 video 原生 HLS（Safari 可播）。 */
+const HLS_CDNS = [
+  "https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js",
+  "https://unpkg.com/hls.js@1.5.13/dist/hls.min.js",
+  "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js",
+];
+let hlsLoading = null;
+function ensureHls() {
+  if (window.Hls) return Promise.resolve(true);
+  if (hlsLoading) return hlsLoading;
+  hlsLoading = (async () => {
+    for (const url of HLS_CDNS) {
+      try {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          const timer = setTimeout(() => rej(new Error("timeout")), 8000);
+          s.src = url;
+          s.onload = () => { clearTimeout(timer); res(); };
+          s.onerror = () => { clearTimeout(timer); rej(new Error("error")); };
+          document.head.appendChild(s);
+        });
+        if (window.Hls) return true;
+      } catch (e) { /* 换下一个 CDN */ }
+    }
+    return false;
+  })();
+  return hlsLoading;
+}
+async function iptvPlayLoad() {
+  await ensureHls();
   const r = ipChan; if (!r) return;
   const err = document.getElementById("ip-err");
   err.style.display = "none";
@@ -2061,7 +2092,8 @@ function vodSourceTestClose() {
   video.pause(); video.removeAttribute("src"); video.load(); video.style.display = "none";
   document.getElementById("vod-source-test-veil").style.display = "none";
 }
-function vodSourcePreview(url) {
+async function vodSourcePreview(url) {
+  await ensureHls();
   const video = document.getElementById("vod-source-preview");
   video.style.display = "block";
   if (vodSourceHls) vodSourceHls.destroy();
@@ -2115,7 +2147,6 @@ const h = location.hash.slice(1);
 if (["overview","licenses","logs","gen","hu","ann","iptv","vod-sources"].includes(h) && h !== "overview")
   document.querySelector(`nav.verbs button[data-tab="${h}"]`).click();
 </script>
-<!-- v1.22 试播浮层用：与网页版同版本 hls.js；加载失败时退回 video 原生 HLS（Safari） -->
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js" defer></script>
+<!-- v1.22 试播浮层用的 hls.js 改成"点播放时才按需加载"（见 ensureHls），不再随页面启动去连外部 CDN -->
 </body>
 </html>
