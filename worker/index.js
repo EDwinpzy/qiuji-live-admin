@@ -1458,9 +1458,40 @@ async function activateCode(env, payload, ip) {
     await logActivate(env, code, device, ip, "protocol_upgrade_required");
     return { ret: 426, msg: "upgrade_required" };
   }
-  if (!CODE_RE.test(code) || !DEVICE_RE.test(device) || !["activate", "verify", "renew"].includes(action)) {
+  if (!DEVICE_RE.test(device) || !["activate", "verify", "renew", "restore"].includes(action)) {
     await logActivate(env, code, device, ip, "bad_request");
     return { ret: 400, msg: "bad_request" };
+  }
+  if (action !== "restore" && !CODE_RE.test(code)) {
+    await logActivate(env, code, device, ip, "bad_request");
+    return { ret: 400, msg: "bad_request" };
+  }
+
+  // ---- 设备维度恢复（2026-09-16）----
+  // 卡密只存在 App 私有数据里，重装即清空；而设备指纹在同一台机器上重装后不变。
+  // 这里凭指纹找回「已经绑定过的」那张授权，原样回同一张票：
+  // 不新增设备位、不改激活时间、不延长有效期；只认已绑定的设备，不能给新设备开门。
+  // 每次尝试都落 activate_log（restore_ok / restore_not_found），便于审计与排查。
+  if (action === "restore") {
+    const row = await dbFirst(
+      env,
+      "SELECT * FROM licenses WHERE devices LIKE ? ORDER BY activated_at DESC LIMIT 1",
+      [`%"${device}"%`],
+    );
+    if (!row) {
+      await logActivate(env, "", device, ip, "restore_not_found");
+      return { ret: 404, msg: "not_found" };
+    }
+    if (row.status === "banned") {
+      await logActivate(env, row.code, device, ip, "banned");
+      return { ret: 403, msg: "banned" };
+    }
+    if (row.expire_at && (parseTime(row.expire_at) ?? 0) <= nowMs) {
+      await logActivate(env, row.code, device, ip, "expired");
+      return { ret: 405, msg: "expired", expireAt: row.expire_at, serverNow };
+    }
+    await logActivate(env, row.code, device, ip, "restore_ok");
+    return licenseResponse(row, serverNow);
   }
 
   if (action === "renew") {
