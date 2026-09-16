@@ -162,6 +162,21 @@ check("第二台设备绑定", activateSecond.data.ret === 0);
 const activateThird = await call("/activate", { body: { protocol: 2, action: "activate", code: "OTV-3QWE7-2ASDF", deviceId: deviceC }, session: false });
 check("第三台设备被拒（402 device_full）", activateThird.data.ret === 402);
 
+/* 设备维度恢复：重装后只凭指纹找回已绑定的那张卡；陌生机器必须拿不到任何票。
+   线上 D1 曾在该查询上抛 `LIKE or GLOB pattern too complex`，把裸 500 透传给 App，
+   所以这里同时锁住「能找回」和「拿不到」两条契约。 */
+const restoreBound = await call("/activate", { body: { protocol: 2, action: "restore", code: "", deviceId: deviceB }, session: false });
+check(
+  "同机重装恢复授权（凭指纹拿回原票）",
+  restoreBound.data.ret === 0
+    && restoreBound.data.licenseCode === "OTV-3QWE7-2ASDF"
+    && restoreBound.data.ticket?.code === "OTV-3QWE7-2ASDF",
+  `expireAt=${restoreBound.data.expireAt}`,
+);
+
+const restoreStranger = await call("/activate", { body: { protocol: 2, action: "restore", code: "", deviceId: "b7c4e1a9".repeat(8) }, session: false });
+check("陌生机器恢复授权被拒（404 not_found）", restoreStranger.data.ret === 404);
+
 const verify = await call("/activate", { body: { protocol: 2, action: "verify", code: "OTV-3QWE7-2ASDF", deviceId: deviceA }, session: false });
 check("已绑定设备复验通过", verify.data.ret === 0 && Boolean(verify.data.serverNow));
 

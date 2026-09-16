@@ -489,8 +489,9 @@ async function rpcAdminLicenses(env, params) {
   const where = [];
   const args = [];
   if (q) {
-    where.push("code LIKE ?");
-    args.push(`%${q}%`);
+    /* 同样避开 D1 的 LIKE 限制（长指纹/长串会报 pattern too complex）；卡密一律大写。 */
+    where.push("instr(code, ?) > 0");
+    args.push(q);
   }
   if (plan) {
     where.push("plan = ?");
@@ -1435,6 +1436,17 @@ async function logActivate(env, code, device, ip, result) {
   );
 }
 
+/* licenses.devices 是 JSON 数组文本；恢复授权时必须确认这台机器「真的在名单里」，
+   不能只看子串命中，否则任何包含该片段的记录都会被冒认。 */
+function deviceBoundTo(row, device) {
+  try {
+    const list = JSON.parse(row?.devices || "[]");
+    return Array.isArray(list) && list.includes(device);
+  } catch {
+    return false;
+  }
+}
+
 function licenseResponse(row, serverNow) {
   return {
     ret: 0,
@@ -1473,12 +1485,15 @@ async function activateCode(env, payload, ip) {
   // 不新增设备位、不改激活时间、不延长有效期；只认已绑定的设备，不能给新设备开门。
   // 每次尝试都落 activate_log（restore_ok / restore_not_found），便于审计与排查。
   if (action === "restore") {
+    /* 线上 D1 会拒绝 `devices LIKE '%<64 位指纹>%'`（LIKE or GLOB pattern too complex），
+       异常逃出去只会给 App 一个裸 500/502。改成 instr 精确命中带引号的指纹，
+       再用 deviceBoundTo 复核，保证只认真正绑定过的那台机器。 */
     const row = await dbFirst(
       env,
-      "SELECT * FROM licenses WHERE devices LIKE ? ORDER BY activated_at DESC LIMIT 1",
-      [`%"${device}"%`],
+      "SELECT * FROM licenses WHERE instr(devices, ?) > 0 ORDER BY activated_at DESC LIMIT 1",
+      [`"${device}"`],
     );
-    if (!row) {
+    if (!row || !deviceBoundTo(row, device)) {
       await logActivate(env, "", device, ip, "restore_not_found");
       return { ret: 404, msg: "not_found" };
     }
@@ -2907,10 +2922,23 @@ export default {
     // 每日自动刷新：挂在真实业务请求后面（响应先回，重建在等待窗口里跑完）
     if (ctx?.waitUntil) ctx.waitUntil(maybeDailyIptv(env));
 
-    if (path.startsWith("/api/")) {
-      return handleAdminApi(request, env, url);
-    }
+    /* 兜底：任何处理链路里逃出来的异常（数据库限制、绑定缺失、上游抖动）都回一段
+       JSON，而不是平台默认的裸 500/502 文本页——设备端会把非 JSON 当成「服务器无响应」，
+       后台也会看到一个空白报错。这里同时把真实原因写进错误日志，便于线上排查。 */
+    try {
+      if (path.startsWith("/api/")) {
+        return await handleAdminApi(request, env, url);
+      }
 
-    return handleDevice(request, env, url);
+      return await handleDevice(request, env, url);
+    } catch (error) {
+      console.error(JSON.stringify({
+        at: "fetch",
+        path,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : null,
+      }));
+      return jsonResponse({ ret: 500, msg: "server_error" }, 500, CORS_HEADERS);
+    }
   },
 };
