@@ -1225,7 +1225,7 @@ function huDirHint(h, saveOk) {
   } else if (remembered) {
     el.textContent = `上次用的目录「${remembered}」没被浏览器保留（无痕模式或"关闭时清除站点数据"会这样），需要重选一次。想彻底免选：本机跑 node scripts/ops/hu-upload.mjs${tail}`;
   } else {
-    el.textContent = "首次使用「上传最新版本」需选择存放 python-backend.zip 的目录（如 android/app/src/main/assets/backend）";
+    el.textContent = "「上传最新版本」弹的是「选文件夹」的框（不是选文件；里面空的是正常的，它只列子文件夹）：停在 backend 这一层，点右下角「选择文件夹」即可，页面会自己取里面最新的 zip。";
   }
 }
 /* 目录选择框弹出时页面会失焦。若页面一直没失焦、又迟迟没有结果，
