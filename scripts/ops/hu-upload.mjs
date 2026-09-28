@@ -6,10 +6,14 @@
  *   node scripts/ops/hu-upload.mjs --offline             只上传（下线态），不推给设备
  *   node scripts/ops/hu-upload.mjs --file <zip 路径>      换文件
  *   node scripts/ops/hu-upload.mjs --name "1.27-fix1" --notes "运维备注" --force
+ *   node scripts/ops/hu-upload.mjs --version 22          显式指定热更版本号（缺省 max+1）
  *   node scripts/ops/hu-upload.mjs --scheduled 2026-09-16T09:00
  *   node scripts/ops/hu-upload.mjs --dry-run             只登录 + 看要传什么，不传
  *
- * 站点：--site 或 SITE_URL，默认 https://mytv-cloud.pengzhiyuan0724.chatgpt.site
+ * 站点：必须用 --site <后台地址> 或环境变量 SITE_URL 显式指定，**没有默认值**。
+ *       CloudBase 已于 2026-09-24 退役；若这里保留一个内置默认站点，AGENTS.md 里
+ *       「裸跑本脚本」的标准发布流程就会把热更静默发回那个已下线的云端，
+ *       而且日志看起来一切正常。宁可失败，也不要猜目标。
  * 账号：OTV_ADMIN_USER（默认 admin）
  * 密码：OTV_ADMIN_PASS；未设置时读本机密钥文件（默认 My TV/tools/keys/admin_pass.txt）
  */
@@ -17,7 +21,6 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-const DEFAULT_SITE = "https://mytv-cloud.pengzhiyuan0724.chatgpt.site";
 const PASS_FILE = path.join("D:", "MyProjects", "My TV", "tools", "keys", "admin_pass.txt");
 const CHUNK = 4 * 1024 * 1024;
 
@@ -36,7 +39,16 @@ function arg(name, fallback = "") {
 }
 const flag = (name) => process.argv.includes(`--${name}`);
 
-const site = (arg("site") || process.env.SITE_URL || DEFAULT_SITE).replace(/\/$/, "");
+const rawSite = arg("site") || process.env.SITE_URL || "";
+if (!rawSite) {
+  console.error(
+    "缺少发布站点：请用 --site <后台地址> 或设置 SITE_URL 环境变量。\n" +
+      "本脚本不再内置默认站点——CloudBase 已退役，猜错目标会把热更发到错误的地方。\n" +
+      "例：node scripts/ops/hu-upload.mjs --site https://<正式域名>/admin --name \"1.27-fix1\"",
+  );
+  process.exit(2);
+}
+const site = rawSite.replace(/\/$/, "");
 const user = process.env.OTV_ADMIN_USER || "admin";
 const dryRun = flag("dry-run");
 const scheduled = arg("scheduled");
@@ -50,6 +62,12 @@ const localStamp = (() => {
 })();
 const notes = arg("notes") || `本机上传 ${localStamp}`;
 const force = flag("force");
+// 显式版本号：切换云端基座时库里最高版本低于设备端已装热更版本，自动 max+1 会被设备忽略
+const explicitVersion = arg("version");
+if (explicitVersion && !/^[1-9][0-9]{0,7}$/.test(explicitVersion)) {
+  console.error(`--version 必须是 1–99999999 的整数，收到「${explicitVersion}」`);
+  process.exit(2);
+}
 
 const requested = arg("file");
 const candidates = requested ? [path.resolve(requested)] : DEFAULT_FILES;
@@ -78,6 +96,7 @@ const statusText = status === "published" ? "立即发布（设备下次启动�
 console.log(`站点    ${site}`);
 console.log(`文件    ${file}（${mb(size)}）`);
 console.log(`发布    ${statusText}`);
+if (explicitVersion) console.log(`版本    指定 v${explicitVersion}（缺省为站点当前最高版本 +1）`);
 
 const login = await fetch(`${site}/api/login`, {
   method: "POST",
@@ -149,6 +168,7 @@ if (dryRun) {
     force: force ? "true" : "false",
     publishAt: scheduled || "",
   });
+  if (explicitVersion) meta.set("version", explicitVersion);
   const commit = await postJson(`${site}/api/hu_upload_commit?${meta}`, { method: "POST" });
   if (commit.data.error) {
     console.error(`上传失败：${commit.data.error}`);
