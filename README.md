@@ -1,5 +1,7 @@
 # My TV 云端（Sites 版）
 
+> GitHub 仓库：[EDwinpzy/qiuji-live-admin](https://github.com/EDwinpzy/qiuji-live-admin)
+
 My TV 的云端服务，替代原腾讯云 CloudBase 环境，数据与对象自持：
 
 | 原来（CloudBase） | 现在 |
