@@ -1,6 +1,11 @@
 node_modules/
 dist/
 .dev-state/
+.wrangler/
+.dev.vars*
+.env
+.env.*
 *.log
 .migrate/
 out/
+.cache/
