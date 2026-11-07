@@ -82,13 +82,6 @@ if (!file) {
 const size = statSync(file).size;
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
-let password = process.env.OTV_ADMIN_PASS || "";
-if (!password && existsSync(PASS_FILE)) password = readFileSync(PASS_FILE, "utf8").trim();
-if (!password) {
-  console.error(`缺少后台密码：设置 OTV_ADMIN_PASS 或写入 ${PASS_FILE}`);
-  process.exit(2);
-}
-
 const statusText = status === "published" ? "立即发布（设备下次启动生效）"
   : status === "scheduled" ? `定时发布（${scheduled}）`
   : "仅上传（下线态，不推给设备）";
@@ -98,23 +91,11 @@ console.log(`文件    ${file}（${mb(size)}）`);
 console.log(`发布    ${statusText}`);
 if (explicitVersion) console.log(`版本    指定 v${explicitVersion}（缺省为站点当前最高版本 +1）`);
 
-const login = await fetch(`${site}/api/login`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ user, pass: password }),
-});
-if (!login.ok) {
-  console.error(`登录失败 HTTP ${login.status}：${(await login.text()).slice(0, 200)}`);
-  process.exit(1);
-}
-const cookie = (login.headers.getSetCookie?.()[0] || "").split(";")[0];
-if (!cookie) {
-  console.error("登录未返回会话 Cookie");
-  process.exit(1);
-}
+let cookie = "";
 
 async function postJson(url, init = {}) {
-  const response = await fetch(url, { ...init, headers: { cookie, ...(init.headers || {}) } });
+  const headers = { ...(cookie ? { cookie } : {}), ...(init.headers || {}) };
+  const response = await fetch(url, { ...init, headers });
   const text = await response.text();
   try {
     return { ok: response.ok, data: JSON.parse(text) };
@@ -123,14 +104,51 @@ async function postJson(url, init = {}) {
   }
 }
 
-if (dryRun) {
-  const state = await postJson(`${site}/api/hu_list`, {
+const listRequest = {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ limit: 1 }),
+};
+let initialState = await postJson(`${site}/api/hu_list`, listRequest);
+if (!initialState.ok) {
+  if (initialState.data?.error !== "未登录或会话已过期") {
+    console.error(`读取站点热更状态失败：${initialState.data?.error || "未知错误"}`);
+    process.exit(1);
+  }
+
+  let password = process.env.OTV_ADMIN_PASS || "";
+  if (!password && existsSync(PASS_FILE)) password = readFileSync(PASS_FILE, "utf8").trim();
+  if (!password) {
+    console.error(`缺少后台密码：设置 OTV_ADMIN_PASS 或写入 ${PASS_FILE}`);
+    process.exit(2);
+  }
+
+  const login = await fetch(`${site}/api/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ limit: 1 }),
+    body: JSON.stringify({ user, pass: password }),
   });
-  const latest = state.data?.rows?.[0]?.hot_version_code ?? "?";
-  console.log(`\n--dry-run：已登录，未上传。站点当前最新热更版本 v${latest}。`);
+  if (!login.ok) {
+    console.error(`登录失败 HTTP ${login.status}：${(await login.text()).slice(0, 200)}`);
+    process.exit(1);
+  }
+  cookie = (login.headers.getSetCookie?.()[0] || "").split(";")[0];
+  if (!cookie) {
+    console.error("登录未返回会话 Cookie");
+    process.exit(1);
+  }
+  initialState = await postJson(`${site}/api/hu_list`, listRequest);
+  if (!initialState.ok) {
+    console.error(`读取站点热更状态失败：${initialState.data?.error || "未知错误"}`);
+    process.exit(1);
+  }
+} else {
+  console.log("后台验证通过（免登录模式）");
+}
+
+if (dryRun) {
+  const latest = initialState.data?.rows?.[0]?.hot_version_code ?? "?";
+  console.log(`\n--dry-run：未上传。站点当前最新热更版本 v${latest}。`);
 } else {
   const buffer = readFileSync(file);
   const uid = randomUUID().replace(/-/g, "").slice(0, 16);

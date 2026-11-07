@@ -82,20 +82,30 @@ node scripts/ops/hu-upload.mjs --dry-run  # 只登录看看要传什么，不传
 - 电视源「自动重建」受 Worker 子请求数限制，单次默认测 60 条线路（`OTV_IPTV_PROBES` 可调，原实现 ~520 条）。
 - 每日自动推流不需要本机也不需要外部定时器：每天 06:30（北京时间）之后站点的第一个访问会顺带触发一次重建（仅 auto 模式）；也可用 `POST /iptv/refresh?token=…` 从外部强制触发。
 
-## 切域名清单（脱离 CloudBase）
+## 状态：已退役（现网为自建 VPS）
 
-线上域名统一为 `https://mytv-cloud.pengzhiyuan0724.chatgpt.site`。
+本目录是**上一代** Cloudflare 方案（Sites / Worker + D1 + R2）的遗留实现。
+CloudBase 与免费域名方案均已退役；现网后台由主仓库的
+`tools/admin_server.py` + `tools/admin.html` 提供，运行在自建 VPS 上：
 
-1. ~~**站点访问**~~ ✅ 已公开（2026-09-15）：设备（APK）不带 ChatGPT 身份，私有站点不可达，所以已切成 public；后台 `/api/*` 仍有账号密码门禁（失败 5 次/分钟锁定），与腾讯云现网同一套保护。
-2. **出 v1.26 APK**：本地代码已改好，**待构建发布**——
-   `android/app/build.gradle`、`internal/mobile/app/build.gradle` 的
-   `LICENSE_ENDPOINT` → `…/activate`，`HOTUPDATE_ENDPOINT` → `…/hotupdate`；
-   `IptvRepository.SOURCES[0]` → `…/iptv/latest`（两个工程各一份）。
-3. **数据同步**：切之前再跑一次增量同步（旧站仍在被使用，卡密/激活记录会变）：
-   `node scripts/migrate/export-cloudbase.mjs` → `node scripts/migrate/import-to-site.mjs <快照目录> <站点域名>`。
-4. **每日推流**：已内置在站点里（v12）——每天 06:30（北京时间）之后第一个访问自动触发重建，不依赖本机、也不需要外部定时器；托管（manual）模式下自动跳过，不覆盖手工列表。要立刻跑一次，用后台「立即自动重建」，或 `POST /iptv/refresh?token=…`（`scripts/ops/iptv-refresh.mjs` 是这条的封装）。
-5. **网页版**：`otv-web`（`proxy.py` + `www/`，234KB Python）仍在 CloudBase；已把 `OTV_LICENSE_ENDPOINT`、`IPTV_SOURCES[0]` 指向新站点（卡密/电视源已解耦），网页版本体与足球兜底中继仍跑在 CloudBase。
-6. **收尾**：设备端观察一个版本周期后，CloudBase 的 activate / hotupdate / iptv-rebuild / otv-admin 可下线，PG 与桶做一次终态归档。
+- compose 服务 `admin`，容器内监听 `8791`（`deploy/selfhosted/compose.yaml`）；
+- 经 `deploy/selfhosted/nginx.conf` 在站点 `/admin/` 暴露（`/admin` 308 跳 `/admin/`），
+  根路径 `/` 同样代理到该服务；
+- 账号密码、会话密钥、API 凭据以 Docker secrets 挂载，不入库、不进镜像。
+
+本目录源码与 `scripts/` 运维脚本保留作迁移对照与历史追溯。其中仍在日常发版中使用的：
+
+- `scripts/ops/hu-upload.mjs` — 上传并发布热更包，**必须显式传 `--site <站点地址>`**
+  （或环境变量 `SITE_URL`），脚本不再内置默认站点，缺站点直接 exit 2；
+- `scripts/ops/license-gen.mjs` — 本机签发卡密并写入后台。
+
+> CloudBase 时代的 `cloudbaserc.json` 等配置已不在版本库中；仅 `scripts/migrate/export-cloudbase.mjs`
+> 作为历史数据导出工具保留，其输出目录 `.migrate/` 已被 gitignore。
+
+## 上一代方案的实测存档（2026-09-15，Cloudflare 方案，已退役）
+
+以下记录仅供追溯当时 Worker + D1 + R2 形态的行为，不代表现网。自建 VPS 方案的运维手册见主仓库
+`docs/项目文档.md`。
 
 ### 公开后实测（2026-09-15，去掉门禁绕过头直连）
 
